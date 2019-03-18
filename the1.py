@@ -9,8 +9,7 @@ def normalize(data):
 def getHistogram(data, bin_size=10, low=0, high=255):
     freqs, bins=np.histogram(data, bins=bin_size, 
                                        range=(low,high))
-    #return (normalize(freqs), bins)
-    return (freqs, bins)
+    return (normalize(freqs), bins)
 
 def getCoordinates(bins):
     x=[]
@@ -55,8 +54,24 @@ def colorHistogram(r_vec, g_vec, b_vec, bin_size):
           b-=1
       color_hist[r,g,b]+=1
     return color_hist
-    
-def test1():
+
+def partitionImage(image, level):
+    if(level==1):
+        return [image]
+    factor=2**(level-1)
+    sub_height, sub_width,_=image.shape
+    sub_height=int(sub_height/factor)
+    sub_width=int(sub_width/factor)
+    iterations=range(factor)
+    partitions=[]
+    for i in iterations:
+        for j in iterations:
+            partitions.append(
+                    image[i*sub_height:(i+1)*sub_height, 
+                          j*sub_width:(j+1)*sub_width])  
+    return partitions
+
+def test1():#gray hist
     gray_face = misc.face(gray=True)
     color_face = misc.face()
     r=color_face[:,:,0].ravel()
@@ -66,9 +81,8 @@ def test1():
     x_vals=getCoordinates(bins)
     plotHistogram(x_vals, freqs, bins)
     
-def test2():
+def test2():#plot hist
     image=plt.imread("test.jpg")
-    print(image.shape)
     r=image[:,:,0].ravel()
     g=image[:,:,1].ravel()
     b=image[:,:,2].ravel()
@@ -84,16 +98,22 @@ def test2():
     plt.xticks([])
     plt.show()
     
-def test3():
+def test3():#color hist
     image=plt.imread("test.jpg")
-    print(image.shape)
     r=image[:,:,0].ravel()
     g=image[:,:,1].ravel()
     b=image[:,:,2].ravel()
     color_hist=colorHistogram(r, g, b, 4)
     
+def test4():#partition
+    image=plt.imread("test.jpg")
+    partitions=partitionImage(image, 1)
+    for part in partitions:
+        plt.imshow(part)
+        plt.show()
+        
 def main():
-    test2()
+    test4()
     
 if __name__ == "__main__":
     main()
