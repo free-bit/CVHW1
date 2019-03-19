@@ -132,12 +132,15 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
     for i in row_size:
         for j in col_size:
             magnitudes[i][j]=np.sqrt(v_filtered[i][j]**2+h_filtered[i][j]**2)
-            #TODO: Check angle interval
-            angles[i][j]=np.rad2deg(np.arctan2(v_filtered[i][j], h_filtered[i][j]))
+            angle=np.rad2deg(np.arctan2(v_filtered[i][j], h_filtered[i][j]))
+            #angles[i][j]=angle if angle>=0 else angle+180
+            angles[i][j]=(angle+180)%180
     return (magnitudes, angles)
 
+#TODO: Normalization???
 def gradientHistogram(magnitudes, angles, bin_size=9):
     step=180/bin_size
+    bins=[step*i for i in range(bin_size+1)]
     shape=magnitudes.shape
     row_size=range(shape[0])
     col_size=range(shape[1])
@@ -149,9 +152,22 @@ def gradientHistogram(magnitudes, angles, bin_size=9):
           if(index==bin_size):
               index-=1
           grad_hist[index]+=magnitude
-    return grad_hist
-    
+    return (grad_hist, bins)
 
+def euclideanDistance(hist1, hist2):
+    if(len(hist1.shape)!=1):
+        hist1=hist1.ravel()
+    if(len(hist2.shape)!=1):
+        hist2=hist2.ravel()
+    size1=hist1.size
+    size2=hist2.size
+    if(size1!=size2):
+        return
+    iterations=range(size1)
+    distance=0
+    for i in iterations:
+        distance+=(hist1[i]-hist2[i])**2
+    return np.sqrt(distance)
 
 def test1():#gray hist
     gray_face = misc.face(gray=True)
@@ -202,7 +218,29 @@ def test5():#gradient
     #plt.imshow(h_filtered)
     #plt.imshow(v_filtered)
     magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
-    plt.imshow(magnitudes)
+    grad_hist, bins=gradientHistogram(magnitudes, angles)
+    print(bins)
+    print(grad_hist)
+    #plt.imshow(magnitudes)
+    
+def test6():#euclidean
+    arr1=np.array([[[1,2,3],
+                    [1,2,3],
+                    [1,2,3]],
+                   [[4,5,6],
+                    [4,5,6],
+                    [4,5,6]]])
+    print(arr1.shape)
+    arr2=np.array([[[1,5,3],
+                    [1,5,3],
+                    [1,5,3]],
+                   [[4,8,6],
+                    [4,5,6],
+                    [4,5,6]]])
+    print(arr2.shape)
+    concatenated=np.vstack((arr1,arr2))
+    print(concatenated.shape)
+    print(concatenated)
         
 def main():
     test5()
