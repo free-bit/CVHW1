@@ -7,8 +7,7 @@ def normalize(data):
     return data/np.linalg.norm(data, ord=1)
 
 def getHistogram(data, bin_size=10, low=0, high=255):
-    freqs, bins=np.histogram(data, bins=bin_size, 
-                                       range=(low,high))
+    freqs, bins=np.histogram(data, bins=bin_size, range=(low,high))
     return (normalize(freqs), bins)
 
 def getCoordinates(bins):
@@ -107,6 +106,19 @@ def applyGradient(image, **kwargs):
     #Apply convolution
     return signal.convolve2d(image, d_filter, mode='same')
 
+def findMagnitudesAndAngles(h_filtered, v_filtered):
+    shape=h_filtered.shape
+    magnitudes=np.empty(shape)
+    angles=np.empty(shape)
+    row_size=range(shape[0])
+    col_size=range(shape[1])
+    for i in row_size:
+        for j in col_size:
+            magnitudes[i][j]=np.sqrt(v_filtered[i][j]**2+h_filtered[i][j]**2)
+            angles[i][j]=np.rad2deg(np.arctan2(v_filtered[i][j], h_filtered[i][j]))
+    return (magnitudes, angles)
+            
+
 def test1():#gray hist
     gray_face = misc.face(gray=True)
     color_face = misc.face()
@@ -152,8 +164,10 @@ def test5():#gradient
     image = misc.face(gray=True)
     h_filtered=applyGradient(image, gradType="centered", orient="horizontal")
     v_filtered=applyGradient(image, gradType="centered", orient="vertical")
-    plt.imshow(h_filtered)
-    plt.imshow(v_filtered)
+    #plt.imshow(h_filtered)
+    #plt.imshow(v_filtered)
+    magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
+    plt.imshow(magnitudes)
         
 def main():
     test5()
