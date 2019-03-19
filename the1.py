@@ -86,6 +86,27 @@ def partitionImage(image, level):
             partitions.append(cols)  
     return partitions
 
+def applyGradient(image, **kwargs):
+    filters={"centered": {"horizontal": np.array([1,0,-1]), 
+                          "vertical": np.array([1,0,-1]).reshape(3,1)},
+             "backward": {"horizontal": np.array([0,1,-1]), 
+                          "vertical": np.array([0,1,-1]).reshape(3,1)},
+             "forward": {"horizontal": np.array([-1,1,0]), 
+                         "vertical": np.array([-1,1,0]).reshape(3,1)}}
+    #Default values
+    gradType="centered"
+    orient="horizontal"
+    #Apply preferences
+    if("orient" in kwargs):
+        orient=kwargs["orient"]
+    if("gradType" in kwargs):
+        gradType=kwargs["gradType"]
+    #Construct filter    
+    d_filter=filters[gradType][orient]   
+    d_filter=np.broadcast_to(d_filter, (3, 3))
+    #Apply convolution
+    return signal.convolve2d(image, d_filter, mode='same')
+
 def test1():#gray hist
     gray_face = misc.face(gray=True)
     color_face = misc.face()
@@ -127,8 +148,15 @@ def test4():#partition
         plt.imshow(part)
         plt.show()
         
+def test5():#gradient
+    image = misc.face(gray=True)
+    h_filtered=applyGradient(image, gradType="centered", orient="horizontal")
+    v_filtered=applyGradient(image, gradType="centered", orient="vertical")
+    plt.imshow(h_filtered)
+    plt.imshow(v_filtered)
+        
 def main():
-    test4()
+    test5()
     
 if __name__ == "__main__":
     main()
