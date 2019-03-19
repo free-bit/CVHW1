@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt          #Plots
 def normalize(data):
     return data/np.linalg.norm(data, ord=1)
 
-def getHistogram(data, bin_size=10, low=0, high=255):
+def grayscaleHistogram(data, bin_size=10, low=0, high=255):
     freqs, bins=np.histogram(data, bins=bin_size, range=(low,high))
     return (normalize(freqs), bins)
 
@@ -38,20 +38,22 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
 
 def colorHistogram(r_vec, g_vec, b_vec, bin_size):
     step=255/bin_size
-    iterations=range(len(r_vec))
     color_hist=np.zeros((bin_size, bin_size, bin_size))
-    print(color_hist.shape)
-    for i in iterations:
-      r=int(r_vec[i]/step)
-      if(r==bin_size):
-          r-=1
-      g=int(g_vec[i]/step)
-      if(g==bin_size):
-          g-=1
-      b=int(b_vec[i]/step)
-      if(b==bin_size):
-          b-=1
-      color_hist[r,g,b]+=1
+    shape=r_vec.shape
+    row_size=range(shape[0])
+    col_size=range(shape[1])
+    for i in row_size:
+        for j in col_size:
+          r=int(r_vec[i][j]/step)
+          if(r==bin_size):
+              r-=1
+          g=int(g_vec[i][j]/step)
+          if(g==bin_size):
+              g-=1
+          b=int(b_vec[i][j]/step)
+          if(b==bin_size):
+              b-=1
+          color_hist[r,g,b]+=1
     return color_hist
 
 def partitionImage(image, level):
@@ -115,9 +117,26 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
     for i in row_size:
         for j in col_size:
             magnitudes[i][j]=np.sqrt(v_filtered[i][j]**2+h_filtered[i][j]**2)
+            #TODO: Check angle interval
             angles[i][j]=np.rad2deg(np.arctan2(v_filtered[i][j], h_filtered[i][j]))
     return (magnitudes, angles)
-            
+
+def gradientHistogram(magnitudes, angles, bin_size=9):
+    step=180/bin_size
+    shape=magnitudes.shape
+    row_size=range(shape[0])
+    col_size=range(shape[1])
+    grad_hist=np.zeros(bin_size)
+    for i in row_size:
+        for j in col_size:
+          magnitude=magnitudes[i][j]
+          index=int(angles[i][j]/step)
+          if(index==bin_size):
+              index-=1
+          grad_hist[index]+=magnitude
+    return grad_hist
+    
+
 
 def test1():#gray hist
     gray_face = misc.face(gray=True)
@@ -125,18 +144,18 @@ def test1():#gray hist
     r=color_face[:,:,0].ravel()
     g=color_face[:,:,1].ravel()
     b=color_face[:,:,2].ravel()
-    freqs, bins=getHistogram(gray_face)
+    freqs, bins=grayscaleHistogram(gray_face)
     x_vals=getCoordinates(bins)
     plotHistogram(x_vals, freqs, bins)
     
 def test2():#plot hist
     image=plt.imread("test.jpg")
-    r=image[:,:,0].ravel()
-    g=image[:,:,1].ravel()
-    b=image[:,:,2].ravel()
-    freqs1, bins1=getHistogram(r, 4)
-    freqs2, bins2=getHistogram(g, 4)
-    freqs3, bins3=getHistogram(b, 4)
+    r=image[:,:,0]
+    g=image[:,:,1]
+    b=image[:,:,2]
+    freqs1, bins1=grayscaleHistogram(r.ravel(), 4)
+    freqs2, bins2=grayscaleHistogram(g.ravel(), 4)
+    freqs3, bins3=grayscaleHistogram(b.ravel(), 4)
     x_vals1=getCoordinates(bins1)
     x_vals2=getCoordinates(bins2)
     x_vals3=getCoordinates(bins3)
@@ -148,10 +167,11 @@ def test2():#plot hist
     
 def test3():#color hist
     image=plt.imread("test.jpg")
-    r=image[:,:,0].ravel()
-    g=image[:,:,1].ravel()
-    b=image[:,:,2].ravel()
+    r=image[:,:,0]
+    g=image[:,:,1]
+    b=image[:,:,2]
     color_hist=colorHistogram(r, g, b, 4)
+    print(color_hist)
     
 def test4():#partition
     image=plt.imread("test.jpg")
@@ -170,7 +190,7 @@ def test5():#gradient
     plt.imshow(magnitudes)
         
 def main():
-    test5()
+    test3()
     
 if __name__ == "__main__":
     main()
