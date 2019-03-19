@@ -60,15 +60,30 @@ def partitionImage(image, level):
         return [image]
     factor=2**(level-1)
     sub_height, sub_width,_=image.shape
+    
+    remainder_height=sub_height%factor
     sub_height=int(sub_height/factor)
+    
+    remainder_width=sub_width%factor
     sub_width=int(sub_width/factor)
+    
     iterations=range(factor)
     partitions=[]
     for i in iterations:
-        for j in iterations:
-            partitions.append(
-                    image[i*sub_height:(i+1)*sub_height, 
-                          j*sub_width:(j+1)*sub_width])  
+        row_start=i*sub_height
+        row_end=row_start+sub_height
+        if(remainder_height>0):
+            row_end+=1
+            remainder_height-=1
+        rows=image[row_start:row_end]
+        for j in iterations:                
+            col_start=j*sub_width
+            col_end=col_start+sub_width
+            if(remainder_width>0):
+                col_end+=1
+                remainder_width-=1
+            cols=rows[:,col_start:col_end]
+            partitions.append(cols)  
     return partitions
 
 def test1():#gray hist
@@ -107,7 +122,7 @@ def test3():#color hist
     
 def test4():#partition
     image=plt.imread("test.jpg")
-    partitions=partitionImage(image, 1)
+    partitions=partitionImage(image, 2)
     for part in partitions:
         plt.imshow(part)
         plt.show()
