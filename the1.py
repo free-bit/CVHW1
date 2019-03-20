@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+import re
+from sys import argv
 import numpy as np                        #Matrices
 from scipy import signal,misc   #Signal, Test Data
 import matplotlib.pyplot as plt          #Plots
+from threading import *
 
 def normalize(data):
     return data/np.linalg.norm(data, ord=1)
@@ -169,6 +172,31 @@ def euclideanDistance(hist1, hist2):
         distance+=(hist1[i]-hist2[i])**2
     return np.sqrt(distance)
 
+#TODO: Write a file I/O handler to save features right after extraction
+#TODO: File read to read color and grayscale images properly
+
+#TODO: Complete
+def extractFeatures(image2D, levels, method, bins):
+    features=np.array([])
+    #Partition the image first
+    partitions=partitionImage(image2D, levels)
+    #Pick a method
+    if(method=="grayscale"):
+        for partition in partitions:
+            gray_hist,_=grayscaleHistogram(partition, bins)#1xlen(bin)
+            features=np.append(features, gray_hist)
+        
+    elif(method=="color3D"):
+        for partition in partitions:
+            color_hist=colorHistogram(partition, bins)
+            features=np.append(features, color_hist)
+            
+    elif(method=="gradient"):
+        for partition in partitions:
+            grad_hist,_=gradientHistogram(partition, bins)#1xlen(bin)
+            features=np.append(features, grad_hist)
+    return features
+
 def test1():#gray hist
     gray_face = misc.face(gray=True)
     #color_face = misc.face()
@@ -242,9 +270,24 @@ def test6():#euclidean
     print(concatenated.shape)
     print(concatenated)
         
-def main():
-    test5()
+def main(argv):
+    thread_count=5
+    try:
+        index=argv.index("--threads")        
+        thread_count=int(argv[index+1])
+    except ValueError:
+        pass
+    print(thread_count)
+    threads=[]
+    for i in range(thread_count):
+        threads.append(Thread(target=test6))#args=(,)
+    print("Starting {} threads...".format(thread_count))
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    print("Threads terminated")
     
 if __name__ == "__main__":
-    main()
+    main(argv[1:])
     
