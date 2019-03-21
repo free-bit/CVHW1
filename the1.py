@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-import re
-from sys import argv
+import os
 import numpy as np                        #Matrices
-from scipy import signal,misc   #Signal, Test Data
 import matplotlib.pyplot as plt          #Plots
-from threading import *
+from sys import argv
+from scipy import signal,misc   #Signal, Test Data
+from threading import Thread
+from PIL import Image
+#TODO: remove later
+from tests import *
+
 
 def normalize(data):
     return data/np.linalg.norm(data, ord=1)
@@ -51,7 +55,10 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
     plt.xticks(keys)
     #plt.show()
 
-def colorHistogram(r_vec2D, g_vec2D, b_vec2D, bin_size):
+def colorHistogram(image2D, bin_size):
+    r_vec2D=image2D[:,:,0]
+    g_vec2D=image2D[:,:,1]
+    b_vec2D=image2D[:,:,2]
     step=255/bin_size
     color_hist=np.zeros((bin_size, bin_size, bin_size))
     shape=r_vec2D.shape
@@ -155,7 +162,7 @@ def gradientHistogram(magnitudes, angles, bin_size=9):
           if(index==bin_size):
               index-=1
           grad_hist[index]+=magnitude
-    return (grad_hist, bins)
+    return (normalize(grad_hist), bins)
 
 def euclideanDistance(hist1, hist2):
     if(len(hist1.shape)!=1):
@@ -176,7 +183,7 @@ def euclideanDistance(hist1, hist2):
 #TODO: File read to read color and grayscale images properly
 
 #TODO: Complete
-def extractFeatures(image2D, levels, method, bins):
+def extractFeatures(image2D, method, levels, bins):
     features=np.array([])
     #Partition the image first
     partitions=partitionImage(image2D, levels)
@@ -197,91 +204,139 @@ def extractFeatures(image2D, levels, method, bins):
             features=np.append(features, grad_hist)
     return features
 
-def test1():#gray hist
-    gray_face = misc.face(gray=True)
-    #color_face = misc.face()
-    #r=color_face[:,:,0].ravel()
-    #g=color_face[:,:,1].ravel()
-    #b=color_face[:,:,2].ravel()
-    freqs, bins=grayscaleHistogram(gray_face, 10)
-    x_vals=getCoordinates(bins)
-    plotHistogram(x_vals, freqs, bins)
+#Read an image and return numpy array for color and grayscale
+def readImage(path):
+    image = Image.open(path)
+    color=np.array(image.convert(mode='RGB'))#TODO: This might be changed
+    grayscale=np.array(image.convert(mode='L'))
+    return (color, grayscale)
+
+def readFeaturesFromFile():
+    pass
     
-def test2():#plot hist
-    image=plt.imread("test.jpg")
-    r=image[:,:,0]
-    g=image[:,:,1]
-    b=image[:,:,2]
-    freqs1, bins1=grayscaleHistogram(r, 4)
-    freqs2, bins2=grayscaleHistogram(g, 4)
-    freqs3, bins3=grayscaleHistogram(b, 4)
-    x_vals1=getCoordinates(bins1)
-    x_vals2=getCoordinates(bins2)
-    x_vals3=getCoordinates(bins3)
-    plotHistogram(x_vals1, freqs1, bins1, color="red", plot="line")
-    plotHistogram(x_vals2, freqs2, bins2, color="green", plot="line")
-    plotHistogram(x_vals3, freqs3, bins3, color="blue", plot="line")
-    plt.xticks([])
-    plt.show()
-    
-def test3():#color hist
-    image=plt.imread("test.jpg")
-    r=image[:,:,0]
-    g=image[:,:,1]
-    b=image[:,:,2]
-    color_hist=colorHistogram(r, g, b, 4)
-    print(color_hist)
-    
-def test4():#partition
-    image=plt.imread("test.jpg")
-    partitions=partitionImage(image, 2)
-    for part in partitions:
-        plt.imshow(part)
-        plt.show()
+def saveFeatures(file, features):
+    count=0
+    for feature in features:
+        index=file.rfind(".")
+        name=file[:index]
+        ext=".txt"
+        np.savetxt("features/"+name+str(count)+ext, feature)
+        count+=1
         
-def test5():#gradient
-    image = misc.face(gray=True)
-    h_filtered=applyGradient(image, gradType="centered", orient="horizontal")
-    v_filtered=applyGradient(image, gradType="centered", orient="vertical")
-    #plt.imshow(h_filtered)
-    #plt.imshow(v_filtered)
-    magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
-    grad_hist, bins=gradientHistogram(magnitudes, angles)
-    print(bins)
-    print(grad_hist)
-    #plt.imshow(magnitudes)
-    
-def test6():#euclidean
-    arr1=np.array([[[1,2,3],
-                    [1,2,3],
-                    [1,2,3]],
-                   [[4,5,6],
-                    [4,5,6],
-                    [4,5,6]]])
-    print(arr1.shape)
-    arr2=np.array([[[1,5,3],
-                    [1,5,3],
-                    [1,5,3]],
-                   [[4,8,6],
-                    [4,5,6],
-                    [4,5,6]]])
-    print(arr2.shape)
-    concatenated=np.vstack((arr1,arr2))
-    print(concatenated.shape)
-    print(concatenated)
+def saveDistances(query, others, distances):
+    for i in range(len(distances)):
+        index1=query.rfind(".")
+        index2=others[i].rfind(".")
+        name="from_"+query[:index1]+"_to_"+others[i][:index2]+".txt"
+        np.savetxt("distances/"+name, distances[i])
         
-def main(argv):
-    thread_count=5
+#Thread routine for CBIR
+def CBIRPipeline(files, params):
+    fext=None
+    query=None
+    if(params["mode"] in ("fext","full")):
+        fext=True
+    elif(params["mode"] in ("query","full")):
+        query=True
+    if(fext):
+        for file in files:
+            color, gray=readImage(params["folder_name"]+file)
+            #Extract features of all files in the list
+            features=[]
+            features.append(extractFeatures(gray, "grayscale", params["level"], params["bins"]))
+            #features.append(extractFeatures(color, "color3D", params["level"], params["bins"]))
+            #features.append(extractFeatures(gray, "gradient", params["level"], params["bins"]))
+            #Save extracted features
+            saveFeatures(file, features)
+    if(query):
+        #Similarity test of query file with all other files
+        euclideanDistance()
+        #Save all distances
+        #saveDistances()
+    
+def parseArgvSetParams(argv, params):
+    #Get thread count (if provided)
     try:
         index=argv.index("--threads")        
-        thread_count=int(argv[index+1])
+        params["thread_count"]=int(argv[index+1])
+    except ValueError:
+        print("Continuing")
+        pass
+    #Get dataset location (if provided)
+    try:
+        index=argv.index("--folder")
+        tmp=argv[index+1]
+        params["folder_name"]=tmp if ('/' in tmp) else (tmp+'/')
     except ValueError:
         pass
-    print(thread_count)
+    #Get image partitioning level (if provided)
+    try:
+        index=argv.index("--level")
+        params["level"]=int(argv[index+1])
+    except ValueError:
+        pass
+    #Get histogram bins to be used (if provided)
+    try:
+        index=argv.index("--bins")
+        params["bins"]=int(argv[index+1])
+    except ValueError:
+        pass
+    #Get mode for pipeline execution (if provided)
+    try:
+        index=argv.index("--mode")
+        tmp=argv[index+1]
+        params["mode"]=tmp if tmp in ("fext", "query", "full") else params["mode"]
+    except ValueError:
+        pass
+    #Get file to be searched in dataset (if provided)
+    try:
+        index=argv.index("--query")
+        params["query_file"]=argv[index+1]
+    except ValueError:
+        pass
+'''
+Possible flags:
+   --threads int
+   --folder string
+   --query string
+   --level int
+   --bins int
+   --mode string
+'''
+def main(argv):
+    params={"thread_count": 1,
+            "folder_name": "dataset/",
+            "query_file": None,
+            "mode": "fext",
+            "level": 1,
+            "bins": 10}
+    parseArgvSetParams(argv, params)
+    #Read files under folder
+    files=os.listdir(params["folder_name"])
+    #Per thread file pool logic
+    number_of_files=len(files)
+    if(number_of_files<params["thread_count"]):
+        params["thread_count"]=number_of_files
+    step=int(number_of_files/params["thread_count"])
+    remainder=int(number_of_files%params["thread_count"])
+    pool=[]
+    start=0
+    for i in range(params["thread_count"]):
+        end=start+step
+        if(remainder):
+            end+=1
+            pool.append(files[start:end])
+            remainder-=1
+        else:
+            pool.append(files[start:end])
+        start=end
+    print("Under directory:{}, total number of images: {}".format(params["folder_name"], 
+                                                                  len(files)))
+    print("Pool length:",len(pool))
     threads=[]
-    for i in range(thread_count):
-        threads.append(Thread(target=test6))#args=(,)
-    print("Starting {} threads...".format(thread_count))
+    for i in range(params["thread_count"]):
+        threads.append(Thread(target=CBIRPipeline, args=(pool[i][:1], params,)))
+    print("Starting {} threads...".format(params["thread_count"]))
     for th in threads:
         th.start()
     for th in threads:
