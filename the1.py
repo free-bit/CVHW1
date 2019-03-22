@@ -234,51 +234,78 @@ def readImage(path):
     grayscale=np.array(image.convert(mode='L'))
     return (color, grayscale)
 
-def readFeaturesFromFile():
-    pass
-    
-def saveFeatures(file, features):
+def readFeaturesFromFile(folder, file):
+    return np.loadtxt(folder+file)
+
+def readDistancesFromFile(folder, file):
+    return np.loadtxt(folder+file)
+
+def getFeatureFileName(filename, feature):
+    index=filename.rfind(".")
+    name=filename[:index]
+    ext=".txt"
+    return (name+str(feature)+ext)
+
+def getDistanceFileName(query, other):
+    index1=query.rfind(".")
+    index2=other.rfind(".")
+    name="from_"+query[:index1]+"_to_"+other[:index2]+".txt"
+    return name
+
+def saveFeaturesToFile(folder, file, features):
     count=0
     for feature in features:
-        index=file.rfind(".")
-        name=file[:index]
-        ext=".txt"
-        np.savetxt("features/"+name+str(count)+ext, feature)
+        name=getFeatureFileName(file, count)
+        np.savetxt(folder+name, feature)
         count+=1
         
-def saveDistances(query, others, distances):
-    for i in range(len(distances)):
-        index1=query.rfind(".")
-        index2=others[i].rfind(".")
-        name="from_"+query[:index1]+"_to_"+others[i][:index2]+".txt"
-        np.savetxt("distances/"+name, distances[i])
+def saveDistanceToFile(folder, query, other, distance):
+    name=getDistanceFileName(query, other)
+    with open(folder+name,"+w") as file:
+        file.write(str(distance))
         
 #Thread routine for CBIR
 def CBIRPipeline(files, params):
-    fext=None
-    query=None
+    fflag=False
+    qflag=False
+    feature_folder=params["feature_folder"]
+    query=params["query_file"]
     if(params["mode"] is "full"):
-        fext=True
-        query=True
+        fflag=True
+        qflag=True
     elif(params["mode"] is "fext"):
-        fext=True
-    elif(params["mode"] is "query"):
-        query=True
-    if(fext):
+        fflag=True
+    elif(params["mode"] is "query" and query):
+        qflag=True
+    if(fflag):
+        print("Extracting features...")
+        dataset_folder=params["dataset_folder"]
         for file in files:
-            color, gray=readImage(params["folder_name"]+file)
+            color, gray=readImage(dataset_folder+file)
             #Extract features of all files in the list
             features=[]
             features.append(extractFeatures(gray, "grayscale", params["level"], params["bins"]))
             #features.append(extractFeatures(color, "color3D", params["level"], params["bins"]))
             #features.append(extractFeatures(gray, "gradient", params["level"], params["bins"]))
             #Save extracted features
-            saveFeatures(file, features)
-    if(query):
-        #Similarity test of query file with all other files
-        euclideanDistance()
-        #Save all distances
-        #saveDistances()
+            saveFeaturesToFile(file, features)
+    if(qflag):
+        print("Querying {} in the database...".format(query))
+        distance_folder=params["distance_folder"]
+        query_feature_name=getFeatureFileName(query, 0)#TODO: 0 is tmp
+        q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
+        others=files
+        try:
+            others.remove(query)
+        except:
+            pass
+        for other in others:
+            feature_name=getFeatureFileName(other, 0)#TODO: 0 is tmp
+            o_feature=readFeaturesFromFile(feature_folder, feature_name)
+            #Similarity test of query file with all other files
+            distance=euclideanDistance(q_feature, o_feature)  
+            #Save distance
+            saveDistanceToFile(distance_folder, query, other, distance)
     
 def parseArgvSetParams(argv, params):
     #Get thread count (if provided)
@@ -286,13 +313,12 @@ def parseArgvSetParams(argv, params):
         index=argv.index("--threads")        
         params["thread_count"]=int(argv[index+1])
     except ValueError:
-        print("Continuing")
         pass
     #Get dataset location (if provided)
     try:
         index=argv.index("--folder")
         tmp=argv[index+1]
-        params["folder_name"]=tmp if ('/' in tmp) else (tmp+'/')
+        params["dataset_folder"]=tmp if ('/' in tmp) else (tmp+'/')
     except ValueError:
         pass
     #Get image partitioning level (if provided)
@@ -320,6 +346,26 @@ def parseArgvSetParams(argv, params):
         params["query_file"]=argv[index+1]
     except ValueError:
         pass
+    print(
+"Parameters configuration\n\
+-------------------------\n\
+thread_count: {}\n\
+dataset_folder: {}\n\
+feature_folder: {}\n\
+distance_folder: {}\n\
+query_file: {}\n\
+mode: {}\n\
+level: {}\n\
+bins: {}\n\
+-------------------------"
+.format(params["thread_count"],
+        params["dataset_folder"],
+        params["feature_folder"],
+        params["distance_folder"],
+        params["query_file"],
+        params["mode"],
+        params["level"],
+        params["bins"]))
 '''
 Possible flags:
    --threads int
@@ -331,14 +377,38 @@ Possible flags:
 '''
 def main(argv):
     params={"thread_count": 4,
-            "folder_name": "dataset/",
-            "query_file": None,
-            "mode": "fext",
+            "dataset_folder": "dataset/",
+            "feature_folder": "Intensity/Intensity Features Bin246 Level1/",
+            "distance_folder": "distances/",
+            "query_file": "aQIhQsRLea.jpg",
+            "mode": "query",
             "level": 1,
-            "bins": 1}
+            "bins": 256}
     parseArgvSetParams(argv, params)
     #Read files under folder
-    files=os.listdir(params["folder_name"])
+    files=os.listdir(params["dataset_folder"])
+    try:
+        files.remove(".")
+    except ValueError:
+        pass
+    try:
+        files.remove("..")
+    except ValueError:
+        pass
+    if(params["mode"] is "fext"):
+        try:
+            os.mkdir("features")
+        except FileExistsError:
+            if(len(os.listdir("features"))):
+                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["feature_folder"]))
+                return
+    if(params["mode"] is "query"):
+        try:
+            os.mkdir("distances")
+        except FileExistsError:
+            if(len(os.listdir("distances"))):
+                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["distance_folder"]))
+                return
     #Per thread file pool logic
     number_of_files=len(files)
     if(number_of_files<params["thread_count"]):
@@ -356,18 +426,17 @@ def main(argv):
         else:
             pool.append(files[start:end])
         start=end
-    print("Under directory:{}, total number of images: {}".format(params["folder_name"], 
+    print("Under directory:{}, total number of images: {}".format(params["dataset_folder"], 
                                                                   len(files)))
-    print("Pool length:",len(pool))
     threads=[]
     for i in range(params["thread_count"]):
         threads.append(Thread(target=CBIRPipeline, args=(pool[i], params,)))
-    print("Starting {} threads...".format(params["thread_count"]))
     for th in threads:
         th.start()
+    print("Running {} threads...".format(params["thread_count"]))
     for th in threads:
         th.join()
-    print("Threads terminated")
+    print("All threads terminated")
     
 if __name__ == "__main__":
     main(argv[1:])
