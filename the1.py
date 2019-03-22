@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
-import numpy as np                        #Matrices
-import matplotlib.pyplot as plt          #Plots
+import numpy as np              #Matrices
+import matplotlib.pyplot as plt #Plots
 from sys import argv
 from scipy import signal,misc   #Signal, Test Data
 from threading import Thread
@@ -9,10 +9,28 @@ from PIL import Image
 #TODO: remove later
 from tests import *
 
-
+#Works fine
 def normalize(data):
     return data/np.linalg.norm(data, ord=1)
 
+def numpyImplementation(image2D, bin_size):
+    gray_hist, bins=np.histogram(image2D, bin_size, range=(0,255))
+    return (normalize(gray_hist), bins)
+
+#Works fine
+def grayscaleHistogram(image2D, bin_size):
+    step=255/bin_size
+    bins=[step*i for i in range(bin_size+1)]
+    image2D=np.sort(image2D, axis=None)
+    indices = np.searchsorted(bins, image2D, side='right')
+    gray_hist=np.zeros(bin_size)
+    for j in indices:
+        gray_hist[j-1]+=1
+    return (normalize(gray_hist), bins)
+    
+'''
+#Older implementation
+#Works fine
 def grayscaleHistogram(image2D, bin_size):
     step=255/bin_size
     bins=[step*i for i in range(bin_size+1)]
@@ -28,6 +46,7 @@ def grayscaleHistogram(image2D, bin_size):
               index-=1
           gray_hist[index]+=1
     return (normalize(gray_hist), bins)
+'''
 
 def getCoordinates(bins):
     x=[]
@@ -54,7 +73,7 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
     plt.xlim(0, 255)
     plt.xticks(keys)
     #plt.show()
-
+#TODO: Needs check and performance improvement
 def colorHistogram(image2D, bin_size):
     r_vec2D=image2D[:,:,0]
     g_vec2D=image2D[:,:,1]
@@ -81,6 +100,7 @@ def colorHistogram(image2D, bin_size):
           color_hist[r,g,b]+=1
     return color_hist
 
+#Works fine in both gray and color images
 def partitionImage(image2D, level):
     if(level==1):
         return [image2D]
@@ -95,23 +115,32 @@ def partitionImage(image2D, level):
     
     iterations=range(factor)
     partitions=[]
+    row_start=0
+    row_end=sub_height
+    row_remainder=remainder_height
     for i in iterations:
-        row_start=i*sub_height
-        row_end=row_start+sub_height
-        if(remainder_height>0):
+        if(row_remainder>0):
             row_end+=1
-            remainder_height-=1
+            row_remainder-=1
+        #print("Rows from:",row_start,"to:",row_end)
         rows=image2D[row_start:row_end]
-        for j in iterations:                
-            col_start=j*sub_width
-            col_end=col_start+sub_width
-            if(remainder_width>0):
+        col_start=0
+        col_end=sub_width
+        col_remainder=remainder_width
+        for j in iterations:
+            if(col_remainder>0):
                 col_end+=1
-                remainder_width-=1
+                col_remainder-=1
+            #print("Cols from:",col_start,"to:",col_end)
             cols=rows[:,col_start:col_end]
-            partitions.append(cols)  
+            partitions.append(cols)
+            col_start=col_end
+            col_end+=sub_width
+        row_start=row_end
+        row_end+=sub_height
+        #print("\n")
     return partitions
-
+#TODO: check
 def applyGradient(image2D, **kwargs):
     filters={"centered": {"horizontal": np.array([1,0,-1]), 
                           "vertical": np.array([1,0,-1]).reshape(3,1)},
@@ -132,7 +161,7 @@ def applyGradient(image2D, **kwargs):
     d_filter=np.broadcast_to(d_filter, (3, 3))
     #Apply convolution
     return signal.convolve2d(image2D, d_filter, mode='same')
-
+#TODO: check
 def findMagnitudesAndAngles(h_filtered, v_filtered):
     shape=h_filtered.shape
     magnitudes=np.empty(shape)
@@ -163,21 +192,14 @@ def gradientHistogram(magnitudes, angles, bin_size=9):
               index-=1
           grad_hist[index]+=magnitude
     return (normalize(grad_hist), bins)
-
+#Works fine
 def euclideanDistance(hist1, hist2):
-    if(len(hist1.shape)!=1):
-        hist1=hist1.ravel()
-    if(len(hist2.shape)!=1):
-        hist2=hist2.ravel()
     size1=hist1.size
     size2=hist2.size
     if(size1!=size2):
         return
-    iterations=range(size1)
-    distance=0
-    for i in iterations:
-        distance+=(hist1[i]-hist2[i])**2
-    return np.sqrt(distance)
+    distance=np.sqrt(np.sum((hist1-hist2)**2))
+    return distance
 
 #TODO: Write a file I/O handler to save features right after extraction
 #TODO: File read to read color and grayscale images properly
@@ -190,7 +212,8 @@ def extractFeatures(image2D, method, levels, bins):
     #Pick a method
     if(method=="grayscale"):
         for partition in partitions:
-            gray_hist,_=grayscaleHistogram(partition, bins)#1xlen(bin)
+            #TODO: replace numpy with grayscaleHistogram later
+            gray_hist,_=numpyImplementation(partition, bins)#1xlen(bin)
             features=np.append(features, gray_hist)
         
     elif(method=="color3D"):
@@ -234,9 +257,12 @@ def saveDistances(query, others, distances):
 def CBIRPipeline(files, params):
     fext=None
     query=None
-    if(params["mode"] in ("fext","full")):
+    if(params["mode"] is "full"):
         fext=True
-    elif(params["mode"] in ("query","full")):
+        query=True
+    elif(params["mode"] is "fext"):
+        fext=True
+    elif(params["mode"] is "query"):
         query=True
     if(fext):
         for file in files:
@@ -304,12 +330,12 @@ Possible flags:
    --mode string
 '''
 def main(argv):
-    params={"thread_count": 1,
+    params={"thread_count": 4,
             "folder_name": "dataset/",
             "query_file": None,
             "mode": "fext",
             "level": 1,
-            "bins": 10}
+            "bins": 1}
     parseArgvSetParams(argv, params)
     #Read files under folder
     files=os.listdir(params["folder_name"])
@@ -335,7 +361,7 @@ def main(argv):
     print("Pool length:",len(pool))
     threads=[]
     for i in range(params["thread_count"]):
-        threads.append(Thread(target=CBIRPipeline, args=(pool[i][:1], params,)))
+        threads.append(Thread(target=CBIRPipeline, args=(pool[i], params,)))
     print("Starting {} threads...".format(params["thread_count"]))
     for th in threads:
         th.start()
