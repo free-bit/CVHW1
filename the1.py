@@ -10,7 +10,7 @@ from operator import itemgetter
 
 #Works fine
 def normalize(data):
-    return data/np.linalg.norm(data, ord=1)
+    return data/np.sum(data)
 
 def numpyImplementation(image2D, bin_size):
     gray_hist, bins=np.histogram(image2D, bin_size, range=(0,255))
@@ -19,12 +19,13 @@ def numpyImplementation(image2D, bin_size):
 #Works fine
 def grayscaleHistogram(image2D, bin_size):
     step=255/bin_size
-    bins=[step*i for i in range(bin_size+1)]
+    bins=[step*i for i in range(1, bin_size+1)]
+    bins[-1]+=1
     image2D=np.sort(image2D, axis=None)
     indices = np.searchsorted(bins, image2D, side='right')
     gray_hist=np.zeros(bin_size)
     for j in indices:
-        gray_hist[j-1]+=1
+        gray_hist[j]+=1
     return (normalize(gray_hist), bins)
     
 '''
@@ -73,9 +74,10 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
     plt.xticks(keys)
     #plt.show()
 
-def newColorHistogram(image2D, bin_size):
+def colorHistogram(image2D, bin_size):
     step=255/bin_size
-    bins=[step*i for i in range(bin_size+1)]
+    bins=[step*i for i in range(1, bin_size+1)]
+    bins[-1]+=1
 
     r_vec2D=image2D[:,:,0].ravel()
     r_indices = np.digitize(r_vec2D, bins)
@@ -89,9 +91,11 @@ def newColorHistogram(image2D, bin_size):
     color_hist=np.zeros((bin_size, bin_size, bin_size))
 
     for i in range(len(r_vec2D)):
-        color_hist[r_indices[i]-1, g_indices[i]-1, b_indices[i]-1]+=1
-    return color_hist
-#TODO: Needs check and performance improvement
+        color_hist[r_indices[i], g_indices[i], b_indices[i]]+=1
+    return normalize(color_hist)
+'''
+#Works fine
+#Older implementation
 def colorHistogram(image2D, bin_size):
     r_vec2D=image2D[:,:,0]
     g_vec2D=image2D[:,:,1]
@@ -117,7 +121,7 @@ def colorHistogram(image2D, bin_size):
               b-=1
           color_hist[r,g,b]+=1
     return color_hist
-
+'''
 #Works fine in both gray and color images
 def partitionImage(image2D, level):
     if(level==1):
