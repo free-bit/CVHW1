@@ -7,8 +7,6 @@ from scipy import signal,misc   #Signal, Test Data
 from threading import Thread
 from PIL import Image
 from operator import itemgetter
-#TODO: remove later
-from tests import *
 
 #Works fine
 def normalize(data):
@@ -76,7 +74,23 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
     #plt.show()
 
 def newColorHistogram(image2D, bin_size):
-    pass
+    step=255/bin_size
+    bins=[step*i for i in range(bin_size+1)]
+
+    r_vec2D=image2D[:,:,0].ravel()
+    r_indices = np.digitize(r_vec2D, bins)
+    
+    g_vec2D=image2D[:,:,1].ravel()
+    g_indices = np.digitize(g_vec2D, bins)
+
+    b_vec2D=image2D[:,:,2].ravel()
+    b_indices = np.digitize(b_vec2D, bins)
+
+    color_hist=np.zeros((bin_size, bin_size, bin_size))
+
+    for i in range(len(r_vec2D)):
+        color_hist[r_indices[i]-1, g_indices[i]-1, b_indices[i]-1]+=1
+    return color_hist
 #TODO: Needs check and performance improvement
 def colorHistogram(image2D, bin_size):
     r_vec2D=image2D[:,:,0]
