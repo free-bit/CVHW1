@@ -244,7 +244,7 @@ def readFeaturesFromFile(folder, file):
 def readDistancesFromFile(folder, file):
     return np.loadtxt(folder+file)
 
-def readQueriesFromFile(file):
+def readLinesFromFile(file):
     with open(file,"r") as file:
         lines=[]
         for line in file:
@@ -293,7 +293,7 @@ def CBIRPipeline(files, params):
     fflag=False
     qflag=False
     feature_folder=params["feature_folder"]
-    query_file=params["query_file"]
+    query_file=params["query_db"]
     if(params["mode"] is "full"):
         fflag=True
         qflag=True
@@ -314,7 +314,7 @@ def CBIRPipeline(files, params):
             #Save extracted features
             saveFeaturesToFile(feature_folder, file, features)
     if(qflag):
-        queries=readQueriesFromFile(query_file)[:1]#TODO: change later
+        queries=readLinesFromFile(query_file)[:1]#TODO: change later
         results={}
         for query in queries:
             print("Querying {} in the database...".format(query))
@@ -368,17 +368,18 @@ def parseArgvSetParams(argv, params):
     #Get file to be searched in dataset (if provided)
     try:
         index=argv.index("--query")
-        params["query_file"]=argv[index+1]
+        params["query_db"]=argv[index+1]
     except ValueError:
         pass
     print(
-"Parameters configuration\n\
+"Parameter configuration\n\
 -------------------------\n\
 thread_count: {}\n\
 dataset_folder: {}\n\
 feature_folder: {}\n\
 distance_folder: {}\n\
-query_file: {}\n\
+image_db: {}\n\
+query_db: {}\n\
 threshold: {}\n\
 mode: {}\n\
 level: {}\n\
@@ -388,7 +389,8 @@ bins: {}\n\
         params["dataset_folder"],
         params["feature_folder"],
         params["distance_folder"],
-        params["query_file"],
+        params["image_db"],
+        params["query_db"],
         params["threshold"],
         params["mode"],
         params["level"],
@@ -407,14 +409,15 @@ def main(argv):
             "dataset_folder": "subdataset/",
             "feature_folder": "features/",
             "distance_folder": "distances/",
-            "query_file": "validation_queries.dat",
+            "image_db": "images.dat",
+            "query_db": "validation_queries.dat",
             "threshold": 0.4,
             "mode": "query",
             "level": 1,
             "bins": 10}
     parseArgvSetParams(argv, params)
     #Read files under folder
-    files=os.listdir(params["dataset_folder"])#[:5]#TODO: change
+    files=readLinesFromFile(params["image_db"])
     if(params["mode"] is "fext"):
         try:
             os.mkdir(params["feature_folder"])
