@@ -6,6 +6,7 @@ from sys import argv
 from scipy import signal,misc   #Signal, Test Data
 from threading import Thread
 from PIL import Image
+from operator import itemgetter
 #TODO: remove later
 from tests import *
 
@@ -73,6 +74,9 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
     plt.xlim(0, 255)
     plt.xticks(keys)
     #plt.show()
+
+def newColorHistogram(image2D, bin_size):
+    pass
 #TODO: Needs check and performance improvement
 def colorHistogram(image2D, bin_size):
     r_vec2D=image2D[:,:,0]
@@ -240,16 +244,24 @@ def readFeaturesFromFile(folder, file):
 def readDistancesFromFile(folder, file):
     return np.loadtxt(folder+file)
 
+def readQueriesFromFile(file):
+    with open(file,"r") as file:
+        lines=[]
+        for line in file:
+            if(line[-1]=='\n'):
+                line=line[:-1]
+            lines.append(line)
+        return lines
+
 def getFeatureFileName(filename, feature):
     index=filename.rfind(".")
     name=filename[:index]
     ext=".txt"
     return (name+str(feature)+ext)
 
-def getDistanceFileName(query, other):
+def getDistanceFileName(query):
     index1=query.rfind(".")
-    index2=other.rfind(".")
-    name="from_"+query[:index1]+"_to_"+other[:index2]+".txt"
+    name="distances_from_"+query[:index1]+".txt"
     return name
 
 def saveFeaturesToFile(folder, file, features):
@@ -259,23 +271,35 @@ def saveFeaturesToFile(folder, file, features):
         np.savetxt(folder+name, feature)
         count+=1
         
-def saveDistanceToFile(folder, query, other, distance):
-    name=getDistanceFileName(query, other)
+def saveResultsToFile(folder, results):
+    name="results.txt"
     with open(folder+name,"+w") as file:
-        file.write(str(distance))
+        for query in results:
+            items=results[query].items()
+            items=sorted(items, key=itemgetter(1))
+            line=query+":"
+            for name, distance in items:
+                line+=("{} {} ").format(distance, name)
+            line=line[:-1]+"\n"
+            file.write(line)
+
+def getMatches(others, distances, threshold):
+    indices=np.where(distances < threshold)[0]
+    matches=[others[i] for i in indices]
+    print(matches)
         
 #Thread routine for CBIR
 def CBIRPipeline(files, params):
     fflag=False
     qflag=False
     feature_folder=params["feature_folder"]
-    query=params["query_file"]
+    query_file=params["query_file"]
     if(params["mode"] is "full"):
         fflag=True
         qflag=True
     elif(params["mode"] is "fext"):
         fflag=True
-    elif(params["mode"] is "query" and query):
+    elif(params["mode"] is "query" and query_file):
         qflag=True
     if(fflag):
         print("Extracting features...")
@@ -288,24 +312,25 @@ def CBIRPipeline(files, params):
             #features.append(extractFeatures(color, "color3D", params["level"], params["bins"]))
             #features.append(extractFeatures(gray, "gradient", params["level"], params["bins"]))
             #Save extracted features
-            saveFeaturesToFile(file, features)
+            saveFeaturesToFile(feature_folder, file, features)
     if(qflag):
-        print("Querying {} in the database...".format(query))
-        distance_folder=params["distance_folder"]
-        query_feature_name=getFeatureFileName(query, 0)#TODO: 0 is tmp
-        q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
-        others=files
-        try:
-            others.remove(query)
-        except:
-            pass
-        for other in others:
-            feature_name=getFeatureFileName(other, 0)#TODO: 0 is tmp
-            o_feature=readFeaturesFromFile(feature_folder, feature_name)
-            #Similarity test of query file with all other files
-            distance=euclideanDistance(q_feature, o_feature)  
-            #Save distance
-            saveDistanceToFile(distance_folder, query, other, distance)
+        queries=readQueriesFromFile(query_file)[:1]#TODO: change later
+        results={}
+        for query in queries:
+            print("Querying {} in the database...".format(query))
+            results[query]={}
+            distance_folder=params["distance_folder"]
+            query_feature_name=getFeatureFileName(query, 0)#TODO: 0 is tmp
+            q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
+            for file in files:
+                feature_name=getFeatureFileName(file, 0)#TODO: 0 is tmp
+                o_feature=readFeaturesFromFile(feature_folder, feature_name)
+                #Similarity test of query file with all other files
+                results[query][file]=euclideanDistance(q_feature, o_feature)
+            #matches=getMatches(files, distances, 0.40)
+            #print(matches)
+        #Save distance
+        saveResultsToFile(distance_folder, results)
     
 def parseArgvSetParams(argv, params):
     #Get thread count (if provided)
@@ -354,6 +379,7 @@ dataset_folder: {}\n\
 feature_folder: {}\n\
 distance_folder: {}\n\
 query_file: {}\n\
+threshold: {}\n\
 mode: {}\n\
 level: {}\n\
 bins: {}\n\
@@ -363,6 +389,7 @@ bins: {}\n\
         params["feature_folder"],
         params["distance_folder"],
         params["query_file"],
+        params["threshold"],
         params["mode"],
         params["level"],
         params["bins"]))
@@ -376,37 +403,30 @@ Possible flags:
    --mode string
 '''
 def main(argv):
-    params={"thread_count": 4,
-            "dataset_folder": "dataset/",
-            "feature_folder": "Intensity/Intensity Features Bin246 Level1/",
+    params={"thread_count": 1,
+            "dataset_folder": "subdataset/",
+            "feature_folder": "features/",
             "distance_folder": "distances/",
-            "query_file": "aQIhQsRLea.jpg",
+            "query_file": "validation_queries.dat",
+            "threshold": 0.4,
             "mode": "query",
             "level": 1,
-            "bins": 256}
+            "bins": 10}
     parseArgvSetParams(argv, params)
     #Read files under folder
-    files=os.listdir(params["dataset_folder"])
-    try:
-        files.remove(".")
-    except ValueError:
-        pass
-    try:
-        files.remove("..")
-    except ValueError:
-        pass
+    files=os.listdir(params["dataset_folder"])#[:5]#TODO: change
     if(params["mode"] is "fext"):
         try:
-            os.mkdir("features")
+            os.mkdir(params["feature_folder"])
         except FileExistsError:
-            if(len(os.listdir("features"))):
+            if(len(os.listdir(params["feature_folder"]))):
                 print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["feature_folder"]))
                 return
     if(params["mode"] is "query"):
         try:
-            os.mkdir("distances")
+            os.mkdir(params["distance_folder"])
         except FileExistsError:
-            if(len(os.listdir("distances"))):
+            if(len(os.listdir(params["distance_folder"]))):
                 print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["distance_folder"]))
                 return
     #Per thread file pool logic
