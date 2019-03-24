@@ -4,7 +4,7 @@ import numpy as np              #Matrices
 import matplotlib.pyplot as plt #Plots
 from sys import argv
 from scipy import signal,misc   #Signal, Test Data
-from threading import Thread
+from threading import Thread, Lock
 from PIL import Image
 from operator import itemgetter
 
@@ -61,6 +61,14 @@ def colorHistogram(image2D, bin_size):
           color_hist[r,g,b]+=1
     return (color_hist, bins)
 '''
+
+#CONSTANTS
+FILTERS={"centered": {"horizontal": np.array([1,0,-1]), 
+                      "vertical": np.array([1,0,-1]).reshape(3,1)},
+         "backward": {"horizontal": np.array([0,1,-1]), 
+                      "vertical": np.array([0,1,-1]).reshape(3,1)},
+         "forward": {"horizontal": np.array([-1,1,0]), 
+                     "vertical": np.array([-1,1,0]).reshape(3,1)}}
 
 #Works fine
 def normalize(data):
@@ -158,14 +166,9 @@ def partitionImage(image2D, level):
         row_end+=sub_height
         #print("\n")
     return partitions
+
 #TODO: check
 def applyGradient(image2D, **kwargs):
-    filters={"centered": {"horizontal": np.array([1,0,-1]), 
-                          "vertical": np.array([1,0,-1]).reshape(3,1)},
-             "backward": {"horizontal": np.array([0,1,-1]), 
-                          "vertical": np.array([0,1,-1]).reshape(3,1)},
-             "forward": {"horizontal": np.array([-1,1,0]), 
-                         "vertical": np.array([-1,1,0]).reshape(3,1)}}
     #Default values
     gradType="centered"
     orient="horizontal"
@@ -175,10 +178,41 @@ def applyGradient(image2D, **kwargs):
     if("gradType" in kwargs):
         gradType=kwargs["gradType"]
     #Construct filter    
-    d_filter=filters[gradType][orient]   
+    d_filter=FILTERS[gradType][orient]   
     d_filter=np.broadcast_to(d_filter, (3, 3))
     #Apply convolution
     return signal.convolve2d(image2D, d_filter, mode='same')
+
+def findMagnitudesAndAngles(h_filtered, v_filtered):
+    if h_filtered.ndim!=1:
+        h_filtered=h_filtered.ravel()
+    if v_filtered.ndim!=1:
+        v_filtered=v_filtered.ravel()
+    size=h_filtered.size
+    magnitudes=np.empty(size)
+    angles=np.empty(size)
+    for i in range(size):
+        magnitudes[i]=np.sqrt(v_filtered[i]**2+h_filtered[i]**2)
+        angle=np.rad2deg(np.arctan2(v_filtered[i], h_filtered[i]))
+        #angles[i][j]=angle if angle>=0 else angle+180
+        angles[i]=(angle+180)%180
+    return (magnitudes, angles)
+
+def gradientHistogram(image2D, bin_size):
+    h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
+    v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
+    magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
+    
+    step=180/bin_size
+    bins=[step*i for i in range(1, bin_size+1)]
+    bins[-1]+=1
+
+    indices = np.digitize(angles, bins)
+    gray_hist=np.zeros(bin_size)
+    for i in range(len(indices)):
+        gray_hist[indices[i]]+=magnitudes[i]
+    return (normalize(gray_hist), bins)
+'''
 #TODO: check
 def findMagnitudesAndAngles(h_filtered, v_filtered):
     shape=h_filtered.shape
@@ -194,7 +228,7 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
             angles[i][j]=(angle+180)%180
     return (magnitudes, angles)
 
-#TODO: check
+#Calculate gradient histogram
 def gradientHistogram(image2D, bin_size):#Use 9 bins
     h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
     v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
@@ -213,8 +247,8 @@ def gradientHistogram(image2D, bin_size):#Use 9 bins
               index-=1
           grad_hist[index]+=magnitude
     return (normalize(grad_hist), bins)
-
-#Works fine
+'''
+#Get euclidean distance between two feature vectors
 def euclideanDistance(hist1, hist2):
     size1=hist1.size
     size2=hist2.size
@@ -223,6 +257,7 @@ def euclideanDistance(hist1, hist2):
     distance=np.sqrt(np.sum((hist1-hist2)**2))
     return distance
 
+#Extract features using provided extraction function
 def extractFeatures(image2D, ext_method, levels, bins):
     features=np.array([])
     #Partition the image first
@@ -259,17 +294,17 @@ def getFeatureFileName(filename, feature):
     index=filename.rfind(".")
     name=filename[:index]
     ext=".txt"
-    return (name+str(feature)+ext)
+    return (name+"_"+feature+ext)
 
 def getDistanceFileName(query):
     index1=query.rfind(".")
     name="distances_from_"+query[:index1]+".txt"
     return name
 
-def saveFeatureToFile(folder, file, feature):
+def saveFeatureToFile(folder, file, feature, ext_mode):
     if(feature.ndim!=1):
         feature=feature.ravel()
-    name=getFeatureFileName(file, count)
+    name=getFeatureFileName(file, ext_mode)
     np.savetxt(folder+name, feature)
         
 def saveResultsToFile(folder, results):
@@ -288,19 +323,27 @@ def getMatches(others, distances, threshold):
     indices=np.where(distances < threshold)[0]
     matches=[others[i] for i in indices]
     print(matches)
-        
+
+def insertKey(results, key):
+    with Lock():
+        results[key]={}
+
+def insertResult(results, key1, key2, value):
+    with Lock():
+        results[key1][key2]=value
+
 #Thread routine for CBIR
-def CBIRPipeline(files, params):
+def CBIRPipeline(files, queries, params, results):
     fflag=False
     qflag=False
-    query_file=params["query_db"]
     pipe_mode=params["pipe_mode"]
+    ext_mode=params["ext_mode"]
     if(pipe_mode is "full"):
         fflag=True
         qflag=True
     elif(pipe_mode is "fext"):
         fflag=True
-    elif(pipe_mode is "query" and query_file):
+    elif(pipe_mode is "query" and queries):
         qflag=True
 
     #Extract features save results to specified folder
@@ -308,7 +351,6 @@ def CBIRPipeline(files, params):
         print("Extracting features...")
         feature_folder=params["feature_wfolder"]
         dataset_folder=params["dataset_rfolder"]
-        ext_mode=params["ext_mode"]
         ext_func, image_type=EXT_FUNCS[ext_mode]
         for file in files:
             #Select gray or color image (based on the method of choice)
@@ -316,28 +358,25 @@ def CBIRPipeline(files, params):
             #Extract features of all files (using the method of choice)
             feature=extractFeatures(image2D, ext_func, params["level"], params["bins"])
             #Save extracted features
-            saveFeaturesToFile(feature_folder, file, features)
+            saveFeatureToFile(feature_folder, file, feature, ext_mode)
 
     #Query given files to get distances and save results to specified folder
     if(qflag):
-        queries=readLinesFromFile(query_file)[:1]#TODO: change later
-        results={}
         feature_folder=params["feature_rfolder"]
         for query in queries:
             print("Querying {} in the database...".format(query))
-            results[query]={}
-            distance_folder=params["distance_wfolder"]
-            query_feature_name=getFeatureFileName(query, 0)#TODO: 0 is tmp
+            insertKey(results, query)
+            query_feature_name=getFeatureFileName(query, ext_mode)#TODO: 0 is tmp
             q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
             for file in files:
-                feature_name=getFeatureFileName(file, 0)#TODO: 0 is tmp
+                feature_name=getFeatureFileName(file, ext_mode)#TODO: 0 is tmp
                 o_feature=readFeaturesFromFile(feature_folder, feature_name)
                 #Similarity test of query file with all other files
-                results[query][file]=euclideanDistance(q_feature, o_feature)
+                distance=euclideanDistance(q_feature, o_feature)
+                insertResult(results, query, file, distance)
             #matches=getMatches(files, distances, 0.40)
             #print(matches)
-        #Save distance
-        saveResultsToFile(distance_folder, results)
+            print(results)
     
 def parseArgvSetParams(argv, params):
     #Get thread count (if provided)
@@ -467,7 +506,7 @@ Possible flags:
 def main(argv):
     help()
     #Example configuration, this config can be changes with flags above
-    params={"thread_count": 1,
+    params={"thread_count": 2,
             "dataset_rfolder": "subdataset/",
             "feature_rfolder": "features/",
             "feature_wfolder": "features/",
@@ -475,14 +514,14 @@ def main(argv):
             "image_db": "images.dat",
             "query_db": "validation_queries.dat",
             "pipe_mode": "query",
-            "ext_mode": "color",
+            "ext_mode": "grad",
             "threshold": 0.4,
             "level": 1,
             "bins": 10}
 
     #Parse cmd args
     parseArgvSetParams(argv, params)
-    return
+
     #Check write directories abort if they are not empty
     if(params["pipe_mode"] in ("fext", "full")):
         try:
@@ -501,6 +540,12 @@ def main(argv):
 
     #Read files in db from the dataset_rfolder
     files=readLinesFromFile(params["image_db"])
+    queries=readLinesFromFile(params["query_db"])
+
+    #TODO: For testing purposes remove later
+    files=["ahshLeADzK.jpg", "ALeTHlSSQi.jpg", "AocBBVgmHL.jpg", "FkFRyMVOPM.jpg", "SHllYUopJZ.jpg", "TQYtyQwlvQ.jpg"]
+    queries=["TQYtyQwlvQ.jpg", "ahshLeADzK.jpg"]
+    #ENDTODO
 
     #Per thread file pool logic
     number_of_files=len(files)
@@ -508,23 +553,41 @@ def main(argv):
         params["thread_count"]=number_of_files
     step=int(number_of_files/params["thread_count"])
     remainder=int(number_of_files%params["thread_count"])
-    pool=[]
+    file_pool=[]
     start=0
     for i in range(params["thread_count"]):
         end=start+step
         if(remainder):
             end+=1
-            pool.append(files[start:end])
+            file_pool.append(files[start:end])
             remainder-=1
         else:
-            pool.append(files[start:end])
+            file_pool.append(files[start:end])
         start=end
+    #Per thread query pool logic
+    number_of_queries=len(queries)
+    step=int(number_of_queries/params["thread_count"])
+    remainder=int(number_of_queries%params["thread_count"])
+    query_pool=[]
+    start=0
+    for i in range(params["thread_count"]):
+        end=start+step
+        if(remainder):
+            end+=1
+            query_pool.append(queries[start:end])
+            remainder-=1
+        else:
+            query_pool.append(queries[start:end])
+        start=end
+    print(query_pool)
+
     print("Under directory:{}, total number of images: {}".format(params["dataset_rfolder"], 
                                                                   len(files)))
     #Creating threads
     threads=[]
+    results={}
     for i in range(params["thread_count"]):
-        threads.append(Thread(target=CBIRPipeline, args=(pool[i], params,)))
+        threads.append(Thread(target=CBIRPipeline, args=(file_pool[i], query_pool[i], params, results)))
 
     #Starting threads
     for th in threads:
@@ -535,6 +598,13 @@ def main(argv):
     for th in threads:
         th.join()
     print("All threads terminated")
+    print("Saving results...")
+    #Save distance
+    if(params["pipe_mode"] in ("query", "full")):
+        if(results):
+            saveResultsToFile(params["distance_wfolder"], results)
+        else:
+            print("WARNING: No result to save!")
     
 if __name__ == "__main__":
     main(argv[1:])
