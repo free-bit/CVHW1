@@ -8,26 +8,18 @@ from threading import Thread
 from PIL import Image
 from operator import itemgetter
 
-#Works fine
-def normalize(data):
-    return data/np.sum(data)
-
+#CONSTANTS
+#Methods that can be used for extraction and image index (0 for color, 1 for gray) 
+EXT_FUNCS={
+    "gray": (eval("grayscaleHistogram"), 1)
+    "color": (eval("colorHistogram"), 0)
+    "grad": (eval("gradientHistogram"), 1)
+}
+'''
 def numpyImplementation(image2D, bin_size):
     gray_hist, bins=np.histogram(image2D, bin_size, range=(0,255))
     return (normalize(gray_hist), bins)
-
-#Works fine
-def grayscaleHistogram(image2D, bin_size):
-    step=255/bin_size
-    bins=[step*i for i in range(1, bin_size+1)]
-    bins[-1]+=1
-    image2D=np.sort(image2D, axis=None)
-    indices = np.searchsorted(bins, image2D, side='right')
-    gray_hist=np.zeros(bin_size)
-    for j in indices:
-        gray_hist[j]+=1
-    return (normalize(gray_hist), bins)
-    
+'''
 '''
 #Older implementation
 #Works fine
@@ -47,12 +39,51 @@ def grayscaleHistogram(image2D, bin_size):
           gray_hist[index]+=1
     return (normalize(gray_hist), bins)
 '''
+'''
+#Works fine
+#Older implementation
+def colorHistogram(image2D, bin_size):
+    r_vec2D=image2D[:,:,0]
+    g_vec2D=image2D[:,:,1]
+    b_vec2D=image2D[:,:,2]
+    step=255/bin_size
+    color_hist=np.zeros((bin_size, bin_size, bin_size))
+    shape=r_vec2D.shape
+    row_size=range(shape[0])
+    col_size=range(shape[1])
+    for i in row_size:
+        r_row=r_vec2D[i]
+        g_row=g_vec2D[i]
+        b_row=b_vec2D[i]
+        for j in col_size:
+          r=int(r_row[j]/step)
+          if(r==bin_size):
+              r-=1
+          g=int(g_row[j]/step)
+          if(g==bin_size):
+              g-=1
+          b=int(b_row[j]/step)
+          if(b==bin_size):
+              b-=1
+          color_hist[r,g,b]+=1
+    return (color_hist, bins)
+'''
 
-def getCoordinates(bins):
-    x=[]
-    for i in range(len(bins)-1):
-        x.append((bins[i]+bins[i+1])/2)
-    return x
+#Works fine
+def normalize(data):
+    return data/np.sum(data)
+
+#Works fine
+def grayscaleHistogram(image2D, bin_size):
+    step=255/bin_size
+    bins=[step*i for i in range(1, bin_size+1)]
+    bins[-1]+=1
+    image2D=np.sort(image2D, axis=None)
+    indices = np.searchsorted(bins, image2D, side='right')
+    gray_hist=np.zeros(bin_size)
+    for j in indices:
+        gray_hist[j]+=1
+    return (normalize(gray_hist), bins)
     
 def plotHistogram(x_vals, weights, keys, **kwargs):
     color="black"
@@ -92,36 +123,8 @@ def colorHistogram(image2D, bin_size):
 
     for i in range(len(r_vec2D)):
         color_hist[r_indices[i], g_indices[i], b_indices[i]]+=1
-    return normalize(color_hist)
-'''
-#Works fine
-#Older implementation
-def colorHistogram(image2D, bin_size):
-    r_vec2D=image2D[:,:,0]
-    g_vec2D=image2D[:,:,1]
-    b_vec2D=image2D[:,:,2]
-    step=255/bin_size
-    color_hist=np.zeros((bin_size, bin_size, bin_size))
-    shape=r_vec2D.shape
-    row_size=range(shape[0])
-    col_size=range(shape[1])
-    for i in row_size:
-        r_row=r_vec2D[i]
-        g_row=g_vec2D[i]
-        b_row=b_vec2D[i]
-        for j in col_size:
-          r=int(r_row[j]/step)
-          if(r==bin_size):
-              r-=1
-          g=int(g_row[j]/step)
-          if(g==bin_size):
-              g-=1
-          b=int(b_row[j]/step)
-          if(b==bin_size):
-              b-=1
-          color_hist[r,g,b]+=1
-    return color_hist
-'''
+    return (normalize(color_hist), bins)
+
 #Works fine in both gray and color images
 def partitionImage(image2D, level):
     if(level==1):
@@ -198,8 +201,11 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
             angles[i][j]=(angle+180)%180
     return (magnitudes, angles)
 
-#TODO: Normalization???
-def gradientHistogram(magnitudes, angles, bin_size=9):
+#TODO: check
+def gradientHistogram(image2D, bin_size):#Use 9 bins
+    h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
+    v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
+    magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
     step=180/bin_size
     bins=[step*i for i in range(bin_size+1)]
     shape=magnitudes.shape
@@ -214,6 +220,7 @@ def gradientHistogram(magnitudes, angles, bin_size=9):
               index-=1
           grad_hist[index]+=magnitude
     return (normalize(grad_hist), bins)
+
 #Works fine
 def euclideanDistance(hist1, hist2):
     size1=hist1.size
@@ -223,30 +230,14 @@ def euclideanDistance(hist1, hist2):
     distance=np.sqrt(np.sum((hist1-hist2)**2))
     return distance
 
-#TODO: Write a file I/O handler to save features right after extraction
-#TODO: File read to read color and grayscale images properly
-
-#TODO: Complete
-def extractFeatures(image2D, method, levels, bins):
+def extractFeatures(image2D, ext_method, levels, bins):
     features=np.array([])
     #Partition the image first
     partitions=partitionImage(image2D, levels)
-    #Pick a method
-    if(method=="grayscale"):
-        for partition in partitions:
-            #TODO: replace numpy with grayscaleHistogram later
-            gray_hist,_=numpyImplementation(partition, bins)#1xlen(bin)
-            features=np.append(features, gray_hist)
-        
-    elif(method=="color3D"):
-        for partition in partitions:
-            color_hist=colorHistogram(partition, bins)
-            features=np.append(features, color_hist)
-            
-    elif(method=="gradient"):
-        for partition in partitions:
-            grad_hist,_=gradientHistogram(partition, bins)#1xlen(bin)
-            features=np.append(features, grad_hist)
+    #For each partition get features and append to the list
+    for partition in partitions:
+        hist,_=ext_method(partition, bins)
+        features=np.append(features, hist)
     return features
 
 #Read an image and return numpy array for color and grayscale
@@ -282,12 +273,11 @@ def getDistanceFileName(query):
     name="distances_from_"+query[:index1]+".txt"
     return name
 
-def saveFeaturesToFile(folder, file, features):
-    count=0
-    for feature in features:
-        name=getFeatureFileName(file, count)
-        np.savetxt(folder+name, feature)
-        count+=1
+def saveFeatureToFile(folder, file, feature):
+    if(feature.ndim!=1):
+        feature=feature.ravel()
+    name=getFeatureFileName(file, count)
+    np.savetxt(folder+name, feature)
         
 def saveResultsToFile(folder, results):
     name="results.txt"
@@ -310,34 +300,40 @@ def getMatches(others, distances, threshold):
 def CBIRPipeline(files, params):
     fflag=False
     qflag=False
-    feature_folder=params["feature_folder"]
     query_file=params["query_db"]
-    if(params["mode"] is "full"):
+    pipe_mode=params["pipe_mode"]
+    if(pipe_mode is "full"):
         fflag=True
         qflag=True
-    elif(params["mode"] is "fext"):
+    elif(pipe_mode is "fext"):
         fflag=True
-    elif(params["mode"] is "query" and query_file):
+    elif(pipe_mode is "query" and query_file):
         qflag=True
+
+    #Extract features save results to specified folder
     if(fflag):
         print("Extracting features...")
-        dataset_folder=params["dataset_folder"]
+        feature_folder=params["feature_wfolder"]
+        dataset_folder=params["dataset_rfolder"]
+        ext_mode=params["ext_mode"]
+        ext_func, image_type=EXT_FUNCS[ext_mode]
         for file in files:
-            color, gray=readImage(dataset_folder+file)
-            #Extract features of all files in the list
-            features=[]
-            features.append(extractFeatures(gray, "grayscale", params["level"], params["bins"]))
-            #features.append(extractFeatures(color, "color3D", params["level"], params["bins"]))
-            #features.append(extractFeatures(gray, "gradient", params["level"], params["bins"]))
+            #Select gray or color image (based on the method of choice)
+            image2D=readImage(dataset_folder+file)[image_type]
+            #Extract features of all files (using the method of choice)
+            feature=extractFeatures(image2D, ext_func, params["level"], params["bins"])
             #Save extracted features
             saveFeaturesToFile(feature_folder, file, features)
+
+    #Query given files to get distances and save results to specified folder
     if(qflag):
         queries=readLinesFromFile(query_file)[:1]#TODO: change later
         results={}
+        feature_folder=params["feature_rfolder"]
         for query in queries:
             print("Querying {} in the database...".format(query))
             results[query]={}
-            distance_folder=params["distance_folder"]
+            distance_folder=params["distance_wfolder"]
             query_feature_name=getFeatureFileName(query, 0)#TODO: 0 is tmp
             q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
             for file in files:
@@ -357,11 +353,58 @@ def parseArgvSetParams(argv, params):
         params["thread_count"]=int(argv[index+1])
     except ValueError:
         pass
-    #Get dataset location (if provided)
+    #Get dataset read location (if provided)
     try:
-        index=argv.index("--folder")
+        index=argv.index("--drfolder")
         tmp=argv[index+1]
-        params["dataset_folder"]=tmp if ('/' in tmp) else (tmp+'/')
+        params["dataset_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        pass
+    #Get feature read location (if provided)
+    try:
+        index=argv.index("--frfolder")
+        tmp=argv[index+1]
+        params["feature_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        pass
+    #Get feature write location (if provided)
+    try:
+        index=argv.index("--fwfolder")
+        tmp=argv[index+1]
+        params["feature_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        pass
+    #Get distrance write location (if provided)
+    try:
+        index=argv.index("--rwfolder")
+        tmp=argv[index+1]
+        params["distance_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        pass
+    #Get full image list (if provided)
+    try:
+        index=argv.index("--imagedb")
+        params["image_db"]=argv[index+1]
+    except ValueError:
+        pass
+    #Get image list to be searched in dataset (if provided)
+    try:
+        index=argv.index("--querydb")
+        params["query_db"]=argv[index+1]
+    except ValueError:
+        pass
+    #Get mode for pipeline execution (if provided)
+    try:
+        index=argv.index("--pipemode")
+        tmp=argv[index+1]
+        params["pipe_mode"]=tmp if tmp in ("fext", "query", "full") else params["pipe_mode"]
+    except ValueError:
+        pass
+    #Get mode for feature extraction (if provided)
+    try:
+        index=argv.index("--extmode")
+        tmp=argv[index+1]
+        params["ext_mode"]=tmp if tmp in EXT_FUNCS.keys() else params["ext_mode"]
     except ValueError:
         pass
     #Get image partitioning level (if provided)
@@ -376,80 +419,85 @@ def parseArgvSetParams(argv, params):
         params["bins"]=int(argv[index+1])
     except ValueError:
         pass
-    #Get mode for pipeline execution (if provided)
-    try:
-        index=argv.index("--mode")
-        tmp=argv[index+1]
-        params["mode"]=tmp if tmp in ("fext", "query", "full") else params["mode"]
-    except ValueError:
-        pass
-    #Get file to be searched in dataset (if provided)
-    try:
-        index=argv.index("--query")
-        params["query_db"]=argv[index+1]
-    except ValueError:
-        pass
     print(
 "Parameter configuration\n\
 -------------------------\n\
 thread_count: {}\n\
-dataset_folder: {}\n\
-feature_folder: {}\n\
-distance_folder: {}\n\
+dataset_rfolder: {}\n\
+feature_rfolder: {}\n\
+feature_wfolder: {}\n\
+distance_wfolder: {}\n\
 image_db: {}\n\
 query_db: {}\n\
+pipe_mode: {}\n\
+ext_mode: {}\n\
 threshold: {}\n\
-mode: {}\n\
 level: {}\n\
 bins: {}\n\
 -------------------------"
 .format(params["thread_count"],
-        params["dataset_folder"],
-        params["feature_folder"],
-        params["distance_folder"],
+        params["dataset_rfolder"],
+        params["feature_rfolder"],
+        params["feature_wfolder"],
+        params["distance_wfolder"],
         params["image_db"],
         params["query_db"],
+        params["pipe_mode"],
+        params["ext_mode"],
         params["threshold"],
-        params["mode"],
         params["level"],
         params["bins"]))
 '''
 Possible flags:
-   --threads int
-   --folder string
-   --query string
-   --level int
-   --bins int
-   --mode string
+    --threads :
+    --drfolder: 
+    --frfolder: 
+    --fwfolder: 
+    --rwfolder: 
+    --imagedb : 
+    --querydb : 
+    --pipemode: 
+    --extmode : 
+    --level   : 
+    --bins    : 
 '''
 def main(argv):
+    #Example configuration, this config can be changes with flags above
     params={"thread_count": 1,
-            "dataset_folder": "subdataset/",
-            "feature_folder": "features/",
-            "distance_folder": "distances/",
+            "dataset_rfolder": "subdataset/",
+            "feature_rfolder": "features/",
+            "feature_wfolder": "features/",
+            "distance_wfolder": "distances/",
             "image_db": "images.dat",
             "query_db": "validation_queries.dat",
+            "pipe_mode": "query",
+            "ext_mode": "color",
             "threshold": 0.4,
-            "mode": "query",
             "level": 1,
             "bins": 10}
+
+    #Parse cmd args
     parseArgvSetParams(argv, params)
-    #Read files under folder
+
+    #Check write directories abort if they are not empty
+    if(params["pipe_mode"] in ("fext", "full")):
+        try:
+            os.mkdir(params["feature_wfolder"])
+        except FileExistsError:
+            if(len(os.listdir(params["feature_wfolder"]))):
+                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["feature_wfolder"]))
+                return
+    if(params["pipe_mode"] in ("query", "full")):
+        try:
+            os.mkdir(params["distance_wfolder"])
+        except FileExistsError:
+            if(len(os.listdir(params["distance_wfolder"]))):
+                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["distance_wfolder"]))
+                return
+
+    #Read files in db from the dataset_rfolder
     files=readLinesFromFile(params["image_db"])
-    if(params["mode"] is "fext"):
-        try:
-            os.mkdir(params["feature_folder"])
-        except FileExistsError:
-            if(len(os.listdir(params["feature_folder"]))):
-                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["feature_folder"]))
-                return
-    if(params["mode"] is "query"):
-        try:
-            os.mkdir(params["distance_folder"])
-        except FileExistsError:
-            if(len(os.listdir(params["distance_folder"]))):
-                print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["distance_folder"]))
-                return
+
     #Per thread file pool logic
     number_of_files=len(files)
     if(number_of_files<params["thread_count"]):
@@ -467,14 +515,19 @@ def main(argv):
         else:
             pool.append(files[start:end])
         start=end
-    print("Under directory:{}, total number of images: {}".format(params["dataset_folder"], 
+    print("Under directory:{}, total number of images: {}".format(params["dataset_rfolder"], 
                                                                   len(files)))
+    #Creating threads
     threads=[]
     for i in range(params["thread_count"]):
         threads.append(Thread(target=CBIRPipeline, args=(pool[i], params,)))
+
+    #Starting threads
     for th in threads:
         th.start()
     print("Running {} threads...".format(params["thread_count"]))
+
+    #Joining threads
     for th in threads:
         th.join()
     print("All threads terminated")
