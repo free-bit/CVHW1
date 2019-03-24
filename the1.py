@@ -8,13 +8,6 @@ from threading import Thread
 from PIL import Image
 from operator import itemgetter
 
-#CONSTANTS
-#Methods that can be used for extraction and image index (0 for color, 1 for gray) 
-EXT_FUNCS={
-    "gray": (eval("grayscaleHistogram"), 1)
-    "color": (eval("colorHistogram"), 0)
-    "grad": (eval("gradientHistogram"), 1)
-}
 '''
 def numpyImplementation(image2D, bin_size):
     gray_hist, bins=np.histogram(image2D, bin_size, range=(0,255))
@@ -374,7 +367,7 @@ def parseArgvSetParams(argv, params):
         params["feature_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
     except ValueError:
         pass
-    #Get distrance write location (if provided)
+    #Get distance write location (if provided)
     try:
         index=argv.index("--rwfolder")
         tmp=argv[index+1]
@@ -422,18 +415,18 @@ def parseArgvSetParams(argv, params):
     print(
 "Parameter configuration\n\
 -------------------------\n\
-thread_count: {}\n\
-dataset_rfolder: {}\n\
-feature_rfolder: {}\n\
-feature_wfolder: {}\n\
-distance_wfolder: {}\n\
-image_db: {}\n\
-query_db: {}\n\
-pipe_mode: {}\n\
-ext_mode: {}\n\
-threshold: {}\n\
-level: {}\n\
-bins: {}\n\
+- thread_count: {}\n\
+- dataset_rfolder: {}\n\
+- feature_rfolder: {}\n\
+- feature_wfolder: {}\n\
+- distance_wfolder: {}\n\
+- image_db: {}\n\
+- query_db: {}\n\
+- pipe_mode: {}\n\
+- ext_mode: {}\n\
+- threshold: {}\n\
+- level: {}\n\
+- bins: {}\n\
 -------------------------"
 .format(params["thread_count"],
         params["dataset_rfolder"],
@@ -447,21 +440,32 @@ bins: {}\n\
         params["threshold"],
         params["level"],
         params["bins"]))
-'''
+#CONSTANTS
+#Methods that can be used for extraction and image index (0 for color, 1 for gray) 
+EXT_FUNCS={
+    "gray": (eval("grayscaleHistogram"), 1),
+    "color": (eval("colorHistogram"), 0),
+    "grad": (eval("gradientHistogram"), 1)
+}
+
+def help():
+    print('''
 Possible flags:
-    --threads :
-    --drfolder: 
-    --frfolder: 
-    --fwfolder: 
-    --rwfolder: 
-    --imagedb : 
-    --querydb : 
-    --pipemode: 
-    --extmode : 
-    --level   : 
-    --bins    : 
-'''
+--threads : thread count (1,2,3...)
+--drfolder: dataset read location
+--frfolder: feature read location
+--fwfolder: feature write location
+--rwfolder: distrance write location
+--imagedb : file name of full image list
+--querydb : file name of query image list
+--pipemode: mode for pipeline execution (full, ext, query)
+--extmode : mode for feature extraction (gray, color, grad)
+--level   : image partitioning level (1,2,3...)
+--bins    : histogram bins to be used (1,2,3...)
+''')
+
 def main(argv):
+    help()
     #Example configuration, this config can be changes with flags above
     params={"thread_count": 1,
             "dataset_rfolder": "subdataset/",
@@ -478,7 +482,7 @@ def main(argv):
 
     #Parse cmd args
     parseArgvSetParams(argv, params)
-
+    return
     #Check write directories abort if they are not empty
     if(params["pipe_mode"] in ("fext", "full")):
         try:
