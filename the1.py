@@ -63,12 +63,18 @@ def colorHistogram(image2D, bin_size):
 '''
 
 #CONSTANTS
-FILTERS={"centered": {"horizontal": np.array([1,0,-1]), 
-                      "vertical": np.array([1,0,-1]).reshape(3,1)},
-         "backward": {"horizontal": np.array([0,1,-1]), 
-                      "vertical": np.array([0,1,-1]).reshape(3,1)},
-         "forward": {"horizontal": np.array([-1,1,0]), 
-                     "vertical": np.array([-1,1,0]).reshape(3,1)}}
+CH=np.broadcast_to(np.array([1,0,-1]), (3,3))
+CV=np.transpose(CH)
+BH=np.broadcast_to(np.array([0,1,-1]), (3,3))
+BV=np.transpose(BH)
+FH=np.broadcast_to(np.array([-1,1,0]), (3,3))
+FV=np.transpose(FH)
+FILTERS={"centered": {"horizontal": CH, 
+                      "vertical": CV},
+         "backward": {"horizontal": BH, 
+                      "vertical": BV},
+         "forward": {"horizontal": FH, 
+                     "vertical": FV}}
 
 #Works fine
 def normalize(data):
@@ -178,8 +184,7 @@ def applyGradient(image2D, **kwargs):
     if("gradType" in kwargs):
         gradType=kwargs["gradType"]
     #Construct filter    
-    d_filter=FILTERS[gradType][orient]   
-    d_filter=np.broadcast_to(d_filter, (3, 3))
+    d_filter=FILTERS[gradType][orient]
     #Apply convolution
     return signal.convolve2d(image2D, d_filter, mode='same')
 
