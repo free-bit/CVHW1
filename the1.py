@@ -99,10 +99,10 @@ def plotHistogram(x_vals, weights, keys, **kwargs):
         color=kwargs["color"] 
     if "plot" in kwargs:
         plot=kwargs["plot"]
-    if(plot is "bar"):
+    if(plot == "bar"):
         plt.hist(x=x_vals, weights=weights, bins=keys,
                  rwidth=0.75, alpha=0.7, color=color)
-    elif(plot is "line"):
+    elif(plot == "line"):
         plt.plot(x_vals, weights, color)
     plt.grid(axis='y', alpha=0.75)
     plt.xlabel('Intensity')
@@ -137,7 +137,8 @@ def partitionImage(image2D, level):
     if(level==1):
         return [image2D]
     factor=2**(level-1)
-    sub_height, sub_width,_=image2D.shape
+    sub_height=image2D.shape[0]
+    sub_width=image2D.shape[1]
     
     remainder_height=sub_height%factor
     sub_height=int(sub_height/factor)
@@ -154,7 +155,7 @@ def partitionImage(image2D, level):
         if(row_remainder>0):
             row_end+=1
             row_remainder-=1
-        #print("Rows from:",row_start,"to:",row_end)
+        # print("Rows from:",row_start,"to:",row_end)
         rows=image2D[row_start:row_end]
         col_start=0
         col_end=sub_width
@@ -163,14 +164,14 @@ def partitionImage(image2D, level):
             if(col_remainder>0):
                 col_end+=1
                 col_remainder-=1
-            #print("Cols from:",col_start,"to:",col_end)
+            # print("Cols from:",col_start,"to:",col_end)
             cols=rows[:,col_start:col_end]
             partitions.append(cols)
             col_start=col_end
             col_end+=sub_width
         row_start=row_end
         row_end+=sub_height
-        #print("\n")
+        # print("\n")
     return partitions
 
 #TODO: check
@@ -277,8 +278,8 @@ def extractFeatures(image2D, ext_method, levels, bins):
 def readImage(path):
     image = Image.open(path)
     color=np.array(image.convert(mode='RGB'))#TODO: This might be changed
-    grayscale=np.array(image.convert(mode='L'))
-    return (color, grayscale)
+    gray=np.array(image.convert(mode='L'))
+    return (color, gray)
 
 def readFeaturesFromFile(folder, file):
     return np.loadtxt(folder+file)
@@ -328,7 +329,7 @@ def getMatches(others, distances, threshold):
     indices=np.where(distances < threshold)[0]
     matches=[others[i] for i in indices]
     print(matches)
-
+'''
 def insertKey(results, key):
     with Lock():
         results[key]={}
@@ -336,19 +337,19 @@ def insertKey(results, key):
 def insertResult(results, key1, key2, value):
     with Lock():
         results[key1][key2]=value
-
+'''
 #Thread routine for CBIR
-def CBIRPipeline(files, queries, params, results):
+def CBIRPipeline(files, queries, params):
     fflag=False
     qflag=False
     pipe_mode=params["pipe_mode"]
     ext_mode=params["ext_mode"]
-    if(pipe_mode is "full"):
+    if(pipe_mode == "full"):
         fflag=True
         qflag=True
-    elif(pipe_mode is "fext"):
+    elif(pipe_mode == "ext"):
         fflag=True
-    elif(pipe_mode is "query" and queries):
+    elif(pipe_mode == "query" and queries):
         qflag=True
 
     #Extract features save results to specified folder
@@ -357,6 +358,10 @@ def CBIRPipeline(files, queries, params, results):
         feature_folder=params["feature_wfolder"]
         dataset_folder=params["dataset_rfolder"]
         ext_func, image_type=EXT_FUNCS[ext_mode]
+        processed=0
+        one_fourth=int(len(files)/4)
+        half=one_fourth*2
+        three_fourth=one_fourth*3
         for file in files:
             #Select gray or color image (based on the method of choice)
             image2D=readImage(dataset_folder+file)[image_type]
@@ -364,13 +369,27 @@ def CBIRPipeline(files, queries, params, results):
             feature=extractFeatures(image2D, ext_func, params["level"], params["bins"])
             #Save extracted features
             saveFeatureToFile(feature_folder, file, feature, ext_mode)
-
+            processed+=1
+            if(processed==one_fourth):
+                print("25% of features extracted. Total files processed: {}".format(processed))
+            elif(processed==half):
+                print("50% of features extracted. Total files processed: {}".format(processed))
+            elif(processed==three_fourth):
+                print("75% of features extracted. Total files processed: {}".format(processed))
+        print("Extraction is completed.")
     #Query given files to get distances and save results to specified folder
     if(qflag):
+        results={}
         feature_folder=params["feature_rfolder"]
+        distance_folder=params["distance_wfolder"]
+        processed=0
+        one_fourth=int(len(queries)/4)
+        half=one_fourth*2
+        three_fourth=one_fourth*3
         for query in queries:
             print("Querying {} in the database...".format(query))
-            insertKey(results, query)
+            #insertKey(results, query)
+            results[query]={}
             query_feature_name=getFeatureFileName(query, ext_mode)#TODO: 0 is tmp
             q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
             for file in files:
@@ -378,18 +397,75 @@ def CBIRPipeline(files, queries, params, results):
                 o_feature=readFeaturesFromFile(feature_folder, feature_name)
                 #Similarity test of query file with all other files
                 distance=euclideanDistance(q_feature, o_feature)
-                insertResult(results, query, file, distance)
+                #insertResult(results, query, file, distance)
+                results[query][file]=distance
+            processed+=1
+            if(processed==one_fourth):
+                print("25% of queries processed. Total queries processed: {}".format(processed))
+            elif(processed==half):
+                print("50% of queries processed. Total queries processed: {}".format(processed))
+            elif(processed==three_fourth):
+                print("75% of queries processed. Total queries processed: {}".format(processed))
             #matches=getMatches(files, distances, 0.40)
             #print(matches)
-            print(results)
-    
+        print("Querying is completed. Saving results to a file...")
+        saveResultsToFile(distance_folder, results)
+
+def printConfig(params):
+#- thread_count: {}\n\
+    print(
+"Parameter configuration\n\
+-------------------------\n\
+- dataset_rfolder: {}\n\
+- feature_rfolder: {}\n\
+- feature_wfolder: {}\n\
+- distance_wfolder: {}\n\
+- image_db: {}\n\
+- query_db: {}\n\
+- pipe_mode: {}\n\
+- ext_mode: {}\n\
+- threshold: {}\n\
+- level: {}\n\
+- bins: {}\n\
+-------------------------"
+.format(#params["thread_count"],
+        params["dataset_rfolder"],
+        params["feature_rfolder"],
+        params["feature_wfolder"],
+        params["distance_wfolder"],
+        params["image_db"],
+        params["query_db"],
+        params["pipe_mode"],
+        params["ext_mode"],
+        params["threshold"],
+        params["level"],
+        params["bins"]))
+
+def help():
+#--threads : thread count (1,2,3...)
+    print('''
+Possible flags:
+--drfolder: dataset read location
+--frfolder: feature read location
+--fwfolder: feature write location
+--rwfolder: distrance write location
+--imagedb : file name of full image list
+--querydb : file name of query image list
+--pipemode: mode for pipeline execution (full, ext, query)
+--extmode : mode for feature extraction (gray, color, grad)
+--level   : image partitioning level (1,2,3...)
+--bins    : histogram bins to be used (1,2,3...)
+''')
+
 def parseArgvSetParams(argv, params):
+    '''
     #Get thread count (if provided)
     try:
         index=argv.index("--threads")        
         params["thread_count"]=int(argv[index+1])
     except ValueError:
         pass
+    '''
     #Get dataset read location (if provided)
     try:
         index=argv.index("--drfolder")
@@ -402,20 +478,6 @@ def parseArgvSetParams(argv, params):
         index=argv.index("--frfolder")
         tmp=argv[index+1]
         params["feature_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
-    except ValueError:
-        pass
-    #Get feature write location (if provided)
-    try:
-        index=argv.index("--fwfolder")
-        tmp=argv[index+1]
-        params["feature_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
-    except ValueError:
-        pass
-    #Get distance write location (if provided)
-    try:
-        index=argv.index("--rwfolder")
-        tmp=argv[index+1]
-        params["distance_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
     except ValueError:
         pass
     #Get full image list (if provided)
@@ -434,7 +496,7 @@ def parseArgvSetParams(argv, params):
     try:
         index=argv.index("--pipemode")
         tmp=argv[index+1]
-        params["pipe_mode"]=tmp if tmp in ("fext", "query", "full") else params["pipe_mode"]
+        params["pipe_mode"]=tmp if tmp in ("ext", "query", "full") else params["pipe_mode"]
     except ValueError:
         pass
     #Get mode for feature extraction (if provided)
@@ -456,34 +518,26 @@ def parseArgvSetParams(argv, params):
         params["bins"]=int(argv[index+1])
     except ValueError:
         pass
-    print(
-"Parameter configuration\n\
--------------------------\n\
-- thread_count: {}\n\
-- dataset_rfolder: {}\n\
-- feature_rfolder: {}\n\
-- feature_wfolder: {}\n\
-- distance_wfolder: {}\n\
-- image_db: {}\n\
-- query_db: {}\n\
-- pipe_mode: {}\n\
-- ext_mode: {}\n\
-- threshold: {}\n\
-- level: {}\n\
-- bins: {}\n\
--------------------------"
-.format(params["thread_count"],
-        params["dataset_rfolder"],
-        params["feature_rfolder"],
-        params["feature_wfolder"],
-        params["distance_wfolder"],
-        params["image_db"],
-        params["query_db"],
-        params["pipe_mode"],
-        params["ext_mode"],
-        params["threshold"],
-        params["level"],
-        params["bins"]))
+    #Get feature write location (if provided)
+    try:
+        index=argv.index("--fwfolder")
+        tmp=argv[index+1]
+        params["feature_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        params["feature_wfolder"]="features_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                      params["bins"],
+                                                                      params["level"])
+    #Get distance write location (if provided)
+    try:
+        index=argv.index("--rwfolder")
+        tmp=argv[index+1]
+        params["distance_wfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        params["distance_wfolder"]="distances_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                        params["bins"],
+                                                                        params["level"])
+    printConfig(params)
+
 #CONSTANTS
 #Methods that can be used for extraction and image index (0 for color, 1 for gray) 
 EXT_FUNCS={
@@ -492,43 +546,39 @@ EXT_FUNCS={
     "grad": (eval("gradientHistogram"), 1)
 }
 
-def help():
-    print('''
-Possible flags:
---threads : thread count (1,2,3...)
---drfolder: dataset read location
---frfolder: feature read location
---fwfolder: feature write location
---rwfolder: distrance write location
---imagedb : file name of full image list
---querydb : file name of query image list
---pipemode: mode for pipeline execution (full, ext, query)
---extmode : mode for feature extraction (gray, color, grad)
---level   : image partitioning level (1,2,3...)
---bins    : histogram bins to be used (1,2,3...)
-''')
-
 def main(argv):
     help()
     #Example configuration, this config can be changes with flags above
-    params={"thread_count": 2,
-            "dataset_rfolder": "subdataset/",
+    params={#"thread_count": 2,
+            "dataset_rfolder": "dataset/",
             "feature_rfolder": "features/",
-            "feature_wfolder": "features/",
+            "feature_wfolder": None,
             "distance_wfolder": "distances/",
             "image_db": "images.dat",
             "query_db": "validation_queries.dat",
             "pipe_mode": "query",
-            "ext_mode": "grad",
+            "ext_mode": "color",
             "threshold": 0.4,
             "level": 1,
-            "bins": 10}
-
+            "bins": 1}
     #Parse cmd args
-    parseArgvSetParams(argv, params)
-
+    if(len(argv)):
+        parseArgvSetParams(argv, params)
+    else:
+        print("WARNING: No flag is provided using the following preset configuration:\n")
+        params["feature_wfolder"]="features_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                      params["bins"],
+                                                                      params["level"])
+        params["distance_wfolder"]="distances_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                        params["bins"],
+                                                                        params["level"])
+        printConfig(params)
+    ans=input("Do you confirm these settings? [y/N]\n")
+    if(ans!="y"):
+        print("Script aborted.")
+        return
     #Check write directories abort if they are not empty
-    if(params["pipe_mode"] in ("fext", "full")):
+    if(params["pipe_mode"] in ("ext", "full")):
         try:
             os.mkdir(params["feature_wfolder"])
         except FileExistsError:
@@ -542,16 +592,16 @@ def main(argv):
             if(len(os.listdir(params["distance_wfolder"]))):
                 print("WARNING: Aborting script not to overwrite existing data under '{}'!".format(params["distance_wfolder"]))
                 return
-
     #Read files in db from the dataset_rfolder
     files=readLinesFromFile(params["image_db"])
     queries=readLinesFromFile(params["query_db"])
 
     #TODO: For testing purposes remove later
-    files=["ahshLeADzK.jpg", "ALeTHlSSQi.jpg", "AocBBVgmHL.jpg", "FkFRyMVOPM.jpg", "SHllYUopJZ.jpg", "TQYtyQwlvQ.jpg"]
-    queries=["TQYtyQwlvQ.jpg", "ahshLeADzK.jpg"]
+    # files=["ahshLeADzK.jpg", "ALeTHlSSQi.jpg", "AocBBVgmHL.jpg", "FkFRyMVOPM.jpg", "SHllYUopJZ.jpg", "TQYtyQwlvQ.jpg"]
+    # queries=["TQYtyQwlvQ.jpg", "ahshLeADzK.jpg"]
     #ENDTODO
-
+    CBIRPipeline(files, queries, params)
+    '''
     #Per thread file pool logic
     number_of_files=len(files)
     if(number_of_files<params["thread_count"]):
@@ -585,7 +635,6 @@ def main(argv):
             query_pool.append(queries[start:end])
         start=end
     print(query_pool)
-
     print("Under directory:{}, total number of images: {}".format(params["dataset_rfolder"], 
                                                                   len(files)))
     #Creating threads
@@ -610,6 +659,7 @@ def main(argv):
             saveResultsToFile(params["distance_wfolder"], results)
         else:
             print("WARNING: No result to save!")
+    '''
     
 if __name__ == "__main__":
     main(argv[1:])
