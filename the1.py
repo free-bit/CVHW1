@@ -8,61 +8,8 @@ from threading import Thread, Lock
 from PIL import Image
 from operator import itemgetter
 
-'''
-def numpyImplementation(image2D, bin_size):
-    gray_hist, bins=np.histogram(image2D, bin_size, range=(0,255))
-    return (normalize(gray_hist), bins)
-'''
-'''
-#Older implementation
-#Works fine
-def grayscaleHistogram(image2D, bin_size):
-    step=255/bin_size
-    bins=[step*i for i in range(bin_size+1)]
-    shape=image2D.shape
-    row_size=range(shape[0])
-    col_size=range(shape[1])
-    gray_hist=np.zeros(bin_size)
-    for i in row_size:
-        row=image2D[i]
-        for j in col_size:
-          index=int(row[j]/step)
-          if(index==bin_size):
-              index-=1
-          gray_hist[index]+=1
-    return (normalize(gray_hist), bins)
-'''
-'''
-#Works fine
-#Older implementation
-def colorHistogram(image2D, bin_size):
-    r_vec2D=image2D[:,:,0]
-    g_vec2D=image2D[:,:,1]
-    b_vec2D=image2D[:,:,2]
-    step=255/bin_size
-    color_hist=np.zeros((bin_size, bin_size, bin_size))
-    shape=r_vec2D.shape
-    row_size=range(shape[0])
-    col_size=range(shape[1])
-    for i in row_size:
-        r_row=r_vec2D[i]
-        g_row=g_vec2D[i]
-        b_row=b_vec2D[i]
-        for j in col_size:
-          r=int(r_row[j]/step)
-          if(r==bin_size):
-              r-=1
-          g=int(g_row[j]/step)
-          if(g==bin_size):
-              g-=1
-          b=int(b_row[j]/step)
-          if(b==bin_size):
-              b-=1
-          color_hist[r,g,b]+=1
-    return (color_hist, bins)
-'''
-
 #CONSTANTS
+#Prewitt operator
 CH=np.broadcast_to(np.array([1,0,-1]), (3,3))
 CV=np.transpose(CH)
 BH=np.broadcast_to(np.array([0,1,-1]), (3,3))
@@ -75,6 +22,13 @@ FILTERS={"centered": {"horizontal": CH,
                       "vertical": BV},
          "forward": {"horizontal": FH, 
                      "vertical": FV}}
+#Sobel operator
+SCH=np.array([[-1,0,1],
+              [-2,0,2],
+              [-1,0,1]])
+SCV=np.transpose(SCH)
+SOBEL={"centered": {"horizontal": SCH,
+                    "vertical": SCV}}
 
 #Works fine
 def normalize(data):
@@ -194,16 +148,11 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
         h_filtered=h_filtered.ravel()
     if v_filtered.ndim!=1:
         v_filtered=v_filtered.ravel()
-    size=h_filtered.size
-    magnitudes=np.empty(size)
-    angles=np.empty(size)
-    for i in range(size):
-        magnitudes[i]=np.sqrt(v_filtered[i]**2+h_filtered[i]**2)
-        angle=np.rad2deg(np.arctan2(v_filtered[i], h_filtered[i]))
-        #angles[i][j]=angle if angle>=0 else angle+180
-        angles[i]=(angle+180)%180
+    magnitudes=np.sqrt(v_filtered**2+h_filtered**2)
+    angles=np.rad2deg(np.arctan2(v_filtered, h_filtered))%180
     return (magnitudes, angles)
 
+#TODO: The following implementation need to be changed.
 def gradientHistogram(image2D, bin_size):
     h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
     v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
@@ -218,42 +167,7 @@ def gradientHistogram(image2D, bin_size):
     for i in range(len(indices)):
         gray_hist[indices[i]]+=magnitudes[i]
     return (normalize(gray_hist), bins)
-'''
-#TODO: check
-def findMagnitudesAndAngles(h_filtered, v_filtered):
-    shape=h_filtered.shape
-    magnitudes=np.empty(shape)
-    angles=np.empty(shape)
-    row_size=range(shape[0])
-    col_size=range(shape[1])
-    for i in row_size:
-        for j in col_size:
-            magnitudes[i][j]=np.sqrt(v_filtered[i][j]**2+h_filtered[i][j]**2)
-            angle=np.rad2deg(np.arctan2(v_filtered[i][j], h_filtered[i][j]))
-            #angles[i][j]=angle if angle>=0 else angle+180
-            angles[i][j]=(angle+180)%180
-    return (magnitudes, angles)
 
-#Calculate gradient histogram
-def gradientHistogram(image2D, bin_size):#Use 9 bins
-    h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
-    v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
-    magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
-    step=180/bin_size
-    bins=[step*i for i in range(bin_size+1)]
-    shape=magnitudes.shape
-    row_size=range(shape[0])
-    col_size=range(shape[1])
-    grad_hist=np.zeros(bin_size)
-    for i in row_size:
-        for j in col_size:
-          magnitude=magnitudes[i][j]
-          index=int(angles[i][j]/step)
-          if(index==bin_size):
-              index-=1
-          grad_hist[index]+=magnitude
-    return (normalize(grad_hist), bins)
-'''
 #Get euclidean distance between two feature vectors
 def euclideanDistance(hist1, hist2):
     size1=hist1.size
@@ -325,19 +239,6 @@ def saveResultsToFile(folder, results):
             line=line[:-1]+"\n"
             file.write(line)
 
-def getMatches(others, distances, threshold):
-    indices=np.where(distances < threshold)[0]
-    matches=[others[i] for i in indices]
-    print(matches)
-'''
-def insertKey(results, key):
-    with Lock():
-        results[key]={}
-
-def insertResult(results, key1, key2, value):
-    with Lock():
-        results[key1][key2]=value
-'''
 #Thread routine for CBIR
 def CBIRPipeline(files, queries, params):
     fflag=False
@@ -377,6 +278,7 @@ def CBIRPipeline(files, queries, params):
             elif(processed==three_fourth):
                 print("75% of features extracted. Total files processed: {}".format(processed))
         print("Extraction is completed.")
+
     #Query given files to get distances and save results to specified folder
     if(qflag):
         results={}
@@ -388,7 +290,7 @@ def CBIRPipeline(files, queries, params):
         three_fourth=one_fourth*3
         for query in queries:
             print("Querying {} in the database...".format(query))
-            #insertKey(results, query)
+            #For each query open an entry
             results[query]={}
             query_feature_name=getFeatureFileName(query, ext_mode)#TODO: 0 is tmp
             q_feature=readFeaturesFromFile(feature_folder, query_feature_name)
@@ -397,7 +299,7 @@ def CBIRPipeline(files, queries, params):
                 o_feature=readFeaturesFromFile(feature_folder, feature_name)
                 #Similarity test of query file with all other files
                 distance=euclideanDistance(q_feature, o_feature)
-                #insertResult(results, query, file, distance)
+                #Insert distance to results
                 results[query][file]=distance
             processed+=1
             if(processed==one_fourth):
@@ -406,13 +308,10 @@ def CBIRPipeline(files, queries, params):
                 print("50% of queries processed. Total queries processed: {}".format(processed))
             elif(processed==three_fourth):
                 print("75% of queries processed. Total queries processed: {}".format(processed))
-            #matches=getMatches(files, distances, 0.40)
-            #print(matches)
         print("Querying is completed. Saving results to a file...")
         saveResultsToFile(distance_folder, results)
 
 def printConfig(params):
-#- thread_count: {}\n\
     print(
 "Parameter configuration\n\
 -------------------------\n\
@@ -424,7 +323,6 @@ def printConfig(params):
 - query_db: {}\n\
 - pipe_mode: {}\n\
 - ext_mode: {}\n\
-- threshold: {}\n\
 - level: {}\n\
 - bins: {}\n\
 -------------------------"
@@ -437,12 +335,10 @@ def printConfig(params):
         params["query_db"],
         params["pipe_mode"],
         params["ext_mode"],
-        params["threshold"],
         params["level"],
         params["bins"]))
 
 def help():
-#--threads : thread count (1,2,3...)
     print('''
 Possible flags:
 --drfolder: dataset read location
@@ -458,14 +354,6 @@ Possible flags:
 ''')
 
 def parseArgvSetParams(argv, params):
-    '''
-    #Get thread count (if provided)
-    try:
-        index=argv.index("--threads")        
-        params["thread_count"]=int(argv[index+1])
-    except ValueError:
-        pass
-    '''
     #Get dataset read location (if provided)
     try:
         index=argv.index("--drfolder")
@@ -549,8 +437,7 @@ EXT_FUNCS={
 def main(argv):
     help()
     #Example configuration, this config can be changes with flags above
-    params={#"thread_count": 2,
-            "dataset_rfolder": "dataset/",
+    params={"dataset_rfolder": "dataset/",
             "feature_rfolder": "features/",
             "feature_wfolder": None,
             "distance_wfolder": "distances/",
@@ -558,7 +445,6 @@ def main(argv):
             "query_db": "validation_queries.dat",
             "pipe_mode": "query",
             "ext_mode": "color",
-            "threshold": 0.4,
             "level": 1,
             "bins": 1}
     #Parse cmd args
@@ -601,65 +487,6 @@ def main(argv):
     # queries=["TQYtyQwlvQ.jpg", "ahshLeADzK.jpg"]
     #ENDTODO
     CBIRPipeline(files, queries, params)
-    '''
-    #Per thread file pool logic
-    number_of_files=len(files)
-    if(number_of_files<params["thread_count"]):
-        params["thread_count"]=number_of_files
-    step=int(number_of_files/params["thread_count"])
-    remainder=int(number_of_files%params["thread_count"])
-    file_pool=[]
-    start=0
-    for i in range(params["thread_count"]):
-        end=start+step
-        if(remainder):
-            end+=1
-            file_pool.append(files[start:end])
-            remainder-=1
-        else:
-            file_pool.append(files[start:end])
-        start=end
-    #Per thread query pool logic
-    number_of_queries=len(queries)
-    step=int(number_of_queries/params["thread_count"])
-    remainder=int(number_of_queries%params["thread_count"])
-    query_pool=[]
-    start=0
-    for i in range(params["thread_count"]):
-        end=start+step
-        if(remainder):
-            end+=1
-            query_pool.append(queries[start:end])
-            remainder-=1
-        else:
-            query_pool.append(queries[start:end])
-        start=end
-    print(query_pool)
-    print("Under directory:{}, total number of images: {}".format(params["dataset_rfolder"], 
-                                                                  len(files)))
-    #Creating threads
-    threads=[]
-    results={}
-    for i in range(params["thread_count"]):
-        threads.append(Thread(target=CBIRPipeline, args=(file_pool[i], query_pool[i], params, results)))
-
-    #Starting threads
-    for th in threads:
-        th.start()
-    print("Running {} threads...".format(params["thread_count"]))
-
-    #Joining threads
-    for th in threads:
-        th.join()
-    print("All threads terminated")
-    print("Saving results...")
-    #Save distance
-    if(params["pipe_mode"] in ("query", "full")):
-        if(results):
-            saveResultsToFile(params["distance_wfolder"], results)
-        else:
-            print("WARNING: No result to save!")
-    '''
     
 if __name__ == "__main__":
     main(argv[1:])
