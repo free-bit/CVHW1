@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import os
+#import subprocess
 import numpy as np              #Matrices
 import matplotlib.pyplot as plt #Plots
 from sys import argv
-from scipy import signal,misc   #Signal, Test Data
+from scipy import signal        #Signal
 from threading import Thread, Lock
 from PIL import Image
 from operator import itemgetter
@@ -152,21 +153,31 @@ def findMagnitudesAndAngles(h_filtered, v_filtered):
     angles=np.rad2deg(np.arctan2(v_filtered, h_filtered))%180
     return (magnitudes, angles)
 
-#TODO: The following implementation need to be changed.
+def findBinPutValue(magnitude, angle, hist, step, bin_size):
+    left=int(angle/step)
+    right=left+1
+    l_weight=right*step-angle
+    r_weight = angle-left*step
+    l_val=magnitude*l_weight/step
+    r_val=magnitude*r_weight/step
+    hist[left] += l_val
+    right=right%bin_size
+    hist[right] += r_val
+
+#Exact implementation
 def gradientHistogram(image2D, bin_size):
+    #Apply filters
     h_filtered=applyGradient(image2D, gradType="centered", orient="horizontal")
     v_filtered=applyGradient(image2D, gradType="centered", orient="vertical")
+    #Obtain polar coordinates
     magnitudes, angles=findMagnitudesAndAngles(h_filtered, v_filtered)
-    
+    #Calculate HoG
     step=180/bin_size
-    bins=[step*i for i in range(1, bin_size+1)]
-    bins[-1]+=1
-
-    indices = np.digitize(angles, bins)
-    gray_hist=np.zeros(bin_size)
-    for i in range(len(indices)):
-        gray_hist[indices[i]]+=magnitudes[i]
-    return (normalize(gray_hist), bins)
+    bins=[step*i for i in range(0, bin_size)]
+    grad_hist=np.zeros(bin_size)
+    for i in range(magnitudes.size):
+        findBinPutValue(magnitudes[i], angles[i], grad_hist, step, bin_size)
+    return (normalize(grad_hist), bins)
 
 #Get euclidean distance between two feature vectors
 def euclideanDistance(hist1, hist2):
@@ -361,13 +372,6 @@ def parseArgvSetParams(argv, params):
         params["dataset_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
     except ValueError:
         pass
-    #Get feature read location (if provided)
-    try:
-        index=argv.index("--frfolder")
-        tmp=argv[index+1]
-        params["feature_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
-    except ValueError:
-        pass
     #Get full image list (if provided)
     try:
         index=argv.index("--imagedb")
@@ -406,6 +410,15 @@ def parseArgvSetParams(argv, params):
         params["bins"]=int(argv[index+1])
     except ValueError:
         pass
+    #Get feature read location (if provided)
+    try:
+        index=argv.index("--frfolder")
+        tmp=argv[index+1]
+        params["feature_rfolder"]=tmp if ('/' in tmp) else (tmp+'/')
+    except ValueError:
+        params["feature_rfolder"]="features_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                      params["bins"],
+                                                                      params["level"])
     #Get feature write location (if provided)
     try:
         index=argv.index("--fwfolder")
@@ -438,7 +451,7 @@ def main(argv):
     help()
     #Example configuration, this config can be changes with flags above
     params={"dataset_rfolder": "dataset/",
-            "feature_rfolder": "features/",
+            "feature_rfolder": None,
             "feature_wfolder": None,
             "distance_wfolder": "distances/",
             "image_db": "images.dat",
@@ -452,6 +465,9 @@ def main(argv):
         parseArgvSetParams(argv, params)
     else:
         print("WARNING: No flag is provided using the following preset configuration:\n")
+        params["feature_rfolder"]="features_{}_bin{}_level{}/".format(params["ext_mode"],
+                                                                      params["bins"],
+                                                                      params["level"])
         params["feature_wfolder"]="features_{}_bin{}_level{}/".format(params["ext_mode"],
                                                                       params["bins"],
                                                                       params["level"])
@@ -487,6 +503,9 @@ def main(argv):
     # queries=["TQYtyQwlvQ.jpg", "ahshLeADzK.jpg"]
     #ENDTODO
     CBIRPipeline(files, queries, params)
+    # proc1=subprocess.Popen(["python","convert_for_eval.py","distances_color_bin2_level2/results.txt"])
+    # proc2=subprocess.Popen(["python", "compute_map.py", "distances_color_bin2_level2/converted_results.txt", "validation_gt.dat"])
+    # return
     
 if __name__ == "__main__":
     main(argv[1:])
